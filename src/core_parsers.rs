@@ -1,27 +1,30 @@
 
-use generic_array::{ArrayLength, GenericArray};
-use std::marker::PhantomData;
+// use generic_array::{ArrayLength, GenericArray};
 pub trait RV {
-    type R : PartialEq + Clone + Default;
+    type R;
 }
 
-pub struct Byte(pub PhantomData<()>);
+pub struct Byte;
 impl RV for Byte {
     type R = u8;
 }
 
-pub struct Array<I, N>(pub I, pub PhantomData<(I,N)>);
+pub struct Array<I, const N : usize>(pub I);
 
-impl<I : RV, N : ArrayLength<I::R> > RV for Array<I, N> {
-    type R = GenericArray<I::R,N>;
+impl< I : RV, const N : usize > RV for Array<I, N> {
+    type R = [I::R; N];
 }
 
-pub struct Action<I : RV, O, E> {
+//pub enum OutOfBand {
+//    Prompt('a mut dyn Fn() -> usize),
+//}
+
+pub struct Action<I : RV, O, A> {
     pub sub: I,
-    pub f: fn(&I::R) -> Result<O, E>
+    pub f: fn(&I::R) -> (O, Option<A>)
 }
 
-impl<I : RV, O : PartialEq + Default + Clone, E> RV for Action<I, O, E> {
+impl<I : RV, O, A> RV for Action<I, O, A> {
     type R = O;
 }
 
