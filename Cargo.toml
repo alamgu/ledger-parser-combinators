@@ -8,7 +8,6 @@ edition = "2018"
 
 [dependencies]
 
-arrayvec = "0.7.1"
-generic-array = "0.14.4"
-generic-arrayvec = "0.3.0"
+arrayvec = { version = "0.7.1", default-features = false }
+generic-array = { version = "0.14.4", default-features = false }
 log = "0.4.14"
