@@ -44,6 +44,7 @@ pub trait ForwardParser : core_parsers::RV {
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8]) -> RR< 'a, Self>;
 }
 
+#[derive(Default)]
 pub struct ByteState;
 
 impl ForwardParser for core_parsers::Byte {
@@ -162,7 +163,7 @@ mod tests {
 
     #[test]
     fn byte_parser() {
-        let parser = Byte;
+        let parser : Byte = Default::default();
         let mut parser_state = Byte::init();
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"cheez"), Ok((b'c', &b"heez"[..])));
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b""), Err((None, &b""[..])));
@@ -170,7 +171,7 @@ mod tests {
 
     #[test]
     fn array_parser() {
-        let parser = Array::<_,3>(Byte);
+        let parser : Array<Byte, 3> = Default::default();
         let mut parser_state = Array::init();
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"ch"), Err((None, &b""[..])));
         parser_state = Array::init();
@@ -179,8 +180,7 @@ mod tests {
 
     #[test]
     fn array_parser_second_tier() {
-        let parser // : Array<Array<Byte, 2>, 3>
-            = Array::<_,3>(Array::<_,2>(Byte));
+        let parser : Array<Array<Byte, 2>, 3> = Default::default();
         let mut parser_state = Array::init();
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"chee"), incomplete());
         parser_state = Array::init();

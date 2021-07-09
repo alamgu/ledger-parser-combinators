@@ -5,11 +5,13 @@ pub trait RV {
     type R;
 }
 
+#[derive(Default)]
 pub struct Byte;
 impl RV for Byte {
     type R = u8;
 }
 
+#[derive(Default)]
 pub struct Array<I, const N : usize>(pub I);
 
 impl< I : RV, const N : usize > RV for Array<I, N> {
@@ -18,10 +20,14 @@ impl< I : RV, const N : usize > RV for Array<I, N> {
 
 macro_rules! number_parser {
     ($p:ident, $t:ty) => {
+
+        #[derive(Default)]
         pub struct $p<const E : Endianness>;
+
         impl<const E: Endianness> RV for $p<E> {
             type R = $t;
         }
+
     }
 }
 
