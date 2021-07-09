@@ -13,7 +13,9 @@ pub enum OOB {
 // None = Incomplete
 type PResult<T> = Option<T>;
 
-type RR<'a, I> = Result<(<I as core_parsers::RV>::R, &'a [u8]), (PResult<OOB>, &'a [u8] )>;
+type RX<'a, R> = Result<(R, &'a [u8]), (PResult<OOB>, &'a [u8] )>;
+
+type RR<'a, I> = RX<'a, <I as core_parsers::RV>::R>;
 
 
 /*
@@ -151,8 +153,13 @@ impl<I : core_parsers::RV + ForwardParser, O: Copy> ForwardParser for core_parse
 
 #[cfg(test)]
 mod tests {
-    use crate::forward_parser::{ForwardParser,OOB};
+    use super::{ForwardParser, OOB, RX};
     use crate::core_parsers::{Byte, Array, Action};
+
+    const fn incomplete<X>() -> RX<'static, X> {
+        Err((None, &[] as _))
+    }
+
     #[test]
     fn byte_parser() {
         let parser = Byte;
@@ -172,28 +179,26 @@ mod tests {
 
     #[test]
     fn array_parser_second_tier() {
-        let incomplete = Err((None, &b""[..]));
         let parser // : Array<Array<Byte, 2>, 3>
             = Array::<_,3>(Array::<_,2>(Byte));
         let mut parser_state = Array::init();
-        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"chee"), incomplete);
+        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"chee"), incomplete());
         parser_state = Array::init();
-        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"cheez"), incomplete);
+        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"cheez"), incomplete());
         parser_state = Array::init();
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"cheezbur"), Ok(([*b"ch",*b"ee",*b"zb"],&b"ur"[..])));
     }
 
     #[test]
     fn action_array_parser() {
-        let incomplete = Err((None, &b""[..]));
         let parser = Array::<_,3>(Action {
             sub: Array::<_,2>(Byte),
             f: |_| ((), None)
         });
         let mut parser_state = Array::init();
-        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"chee"), incomplete);
+        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"chee"), incomplete());
         parser_state = Array::init();
-        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"cheez"), incomplete);
+        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"cheez"), incomplete());
         parser_state = Array::init();
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"cheezbur"), Ok(([(),(),()],&b"ur"[..])));
     }
@@ -201,13 +206,12 @@ mod tests {
     #[test]
     fn action_array_parser_oob() {
         use arrayvec::ArrayString;
-        let incomplete = Err((None, &b""[..]));
         let parser = Array::<_,3>(Action {
             sub: Array::<_,2>(Byte),
             f: |_| ((), Some(OOB::Prompt([ArrayString::new(),ArrayString::new()])))
         });
         let mut parser_state = Array::init();
-        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"c"), incomplete);
+        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"c"), incomplete());
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"hee"), Err((Some(OOB::Prompt([ArrayString::new(),ArrayString::new()])), &b"ee"[..])));
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"ee"), Err((Some(OOB::Prompt([ArrayString::new(),ArrayString::new()])), &b""[..])));
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"zbur"), Err((Some(OOB::Prompt([ArrayString::new(),ArrayString::new()])), &b"ur"[..])));
