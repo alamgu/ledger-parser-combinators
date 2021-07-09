@@ -119,7 +119,7 @@ pub enum ActionState<I : ForwardParser, O> {
     Done
 }
 
-impl<I : core_parsers::RV + ForwardParser, O: Copy> ForwardParser for core_parsers::Action<I, O, OOB> {
+impl<I : core_parsers::RV + ForwardParser, O: Copy, F: Fn(&I::R) -> (O, Option<OOB>)> ForwardParser for core_parsers::Action<I, O, OOB, F> {
     type State = ActionState<I, O>;
     fn init() -> Self::State {
         Self::State::ParsingInputs(I::init())
@@ -158,7 +158,7 @@ mod tests {
     use crate::core_parsers::{Byte, Array, Action};
 
     const fn incomplete<X>() -> RX<'static, X> {
-        Err((None, &[] as _))
+        Err((None, &[]))
     }
 
     #[test]
@@ -208,7 +208,7 @@ mod tests {
         use arrayvec::ArrayString;
         let parser = Array::<_,3>(Action {
             sub: Array::<_,2>(Byte),
-            f: |_| ((), Some(OOB::Prompt([ArrayString::new(),ArrayString::new()])))
+            f: |_| ((), Some(OOB::Prompt([ArrayString::new(), ArrayString::new()])))
         });
         let mut parser_state = Array::init();
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"c"), incomplete());

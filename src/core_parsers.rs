@@ -39,12 +39,12 @@ number_parser! { U64, u64 }
 //    Prompt('a mut dyn Fn() -> usize),
 //}
 
-pub struct Action<I : RV, O, A> {
+pub struct Action<I : RV, O, A, F: Fn(&I::R) -> (O, Option<A>)> {
     pub sub: I,
-    pub f: fn(&I::R) -> (O, Option<A>)
+    pub f: F,
 }
 
-impl<I : RV, O, A> RV for Action<I, O, A> {
+impl<I : RV, O, A, F: Fn(&I::R) -> (O, Option<A>)> RV for Action<I, O, A, F> {
     type R = O;
 }
 
