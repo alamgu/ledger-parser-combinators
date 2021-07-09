@@ -1,3 +1,4 @@
+use crate::endianness::Endianness;
 
 // use generic_array::{ArrayLength, GenericArray};
 pub trait RV {
@@ -14,6 +15,19 @@ pub struct Array<I, const N : usize>(pub I);
 impl< I : RV, const N : usize > RV for Array<I, N> {
     type R = [I::R; N];
 }
+
+macro_rules! number_parser {
+    ($p:ident, $t:ty) => {
+        pub struct $p<const E : Endianness>;
+        impl<const E: Endianness> RV for $p<E> {
+            type R = $t;
+        }
+    }
+}
+
+number_parser! { U16, u16 }
+number_parser! { U32, u32 }
+number_parser! { U64, u64 }
 
 //pub enum OutOfBand {
 //    Prompt('a mut dyn Fn() -> usize),

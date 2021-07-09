@@ -1,5 +1,7 @@
 use crate::core_parsers;
 
+use crate::endianness::{Endianness, Convert};
+
 use arrayvec::{ArrayVec, ArrayString};
 
 #[derive(Debug, PartialEq)]
@@ -40,9 +42,11 @@ pub trait ForwardParser : core_parsers::RV {
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8]) -> RR< 'a, Self>;
 }
 
+pub struct ByteState;
+
 impl ForwardParser for core_parsers::Byte {
-    type State=();
-    fn init() -> () { () }
+    type State = ByteState;
+    fn init() -> Self::State { Self::State {} }
     fn parse<'a,'b>(&self, _state: &'b mut Self::State, chunk: &'a [u8]) -> RR<'a, Self> {
         match chunk.split_first() {
             None => Err((None, chunk)),
@@ -54,14 +58,14 @@ impl ForwardParser for core_parsers::Byte {
 }
 
 pub struct ForwardArrayParserState<I : core_parsers::RV + ForwardParser, const N : usize > {
-        buffer: ArrayVec<I::R, N>, //GenericArrayVec<I::R,N>,
-        sub: I::State
+    buffer: ArrayVec<I::R, N>, //GenericArrayVec<I::R,N>,
+    sub: I::State
 }
 
 impl<I : core_parsers::RV + ForwardParser, const N : usize > ForwardParser for core_parsers::Array<I, N> where <I as core_parsers::RV>::R: Copy {
-    type State=ForwardArrayParserState<I, N>;
+    type State = ForwardArrayParserState<I, N>;
     fn init() -> Self::State {
-        ForwardArrayParserState::<I, N>{ buffer: ArrayVec::<I::R,N>::new(), sub: I::init() }
+        Self::State { buffer: ArrayVec::<I::R,N>::new(), sub: I::init() }
     }
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8]) -> RR<'a, Self>{
         let mut remaining : &'a [u8] = chunk;
@@ -82,6 +86,30 @@ impl<I : core_parsers::RV + ForwardParser, const N : usize > ForwardParser for c
     }
 }
 
+macro_rules! number_parser {
+    ($p:ident, $state:ident, $size:expr) => {
+        pub struct $state<const E : Endianness>(ForwardArrayParserState<core_parsers::Byte, $size>);
+
+        impl<const E : Endianness> ForwardParser for core_parsers::$p<E> where Self::R : Convert::<E> {
+            type State = $state<E>;
+            fn init() -> Self::State {
+                // Can't use associate name here so I guess we'll have to fall back on macro param instead
+                //<Self as ForwardParser>::State { 0: core_parsers::Array::<core_parsers::Byte, $size>::init() }
+                $state::<E>(core_parsers::Array::<core_parsers::Byte, $size>::init())
+            }
+            fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8]) -> RR<'a, Self> {
+                core_parsers::Array::<core_parsers::Byte, $size>(core_parsers::Byte)
+                    .parse(&mut state.0, chunk)
+                    .map(|(r, b)| (Convert::<E>::deserialize(r), b))
+            }
+        }
+    }
+}
+
+number_parser! { U16, ForwardU16ParserState, 2 }
+number_parser! { U32, ForwardU32ParserState, 4 }
+number_parser! { U64, ForwardU64ParserState, 8 }
+
 pub enum ActionState<I : ForwardParser, O> {
     ParsingInputs(I::State),
     StoredReturnValue(O),
@@ -91,7 +119,7 @@ pub enum ActionState<I : ForwardParser, O> {
 impl<I : core_parsers::RV + ForwardParser, O: Copy> ForwardParser for core_parsers::Action<I, O, OOB> {
     type State = ActionState<I, O>;
     fn init() -> Self::State {
-        ActionState::ParsingInputs(I::init())
+        Self::State::ParsingInputs(I::init())
     }
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8]) -> RR<'a, Self>{
         match state {
@@ -145,7 +173,7 @@ mod tests {
     #[test]
     fn array_parser_second_tier() {
         let incomplete = Err((None, &b""[..]));
-        let parser // : Array<Array<Byte, 2>, 3> 
+        let parser // : Array<Array<Byte, 2>, 3>
             = Array::<_,3>(Array::<_,2>(Byte));
         let mut parser_state = Array::init();
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"chee"), incomplete);
@@ -154,7 +182,7 @@ mod tests {
         parser_state = Array::init();
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"cheezbur"), Ok(([*b"ch",*b"ee",*b"zb"],&b"ur"[..])));
     }
-    
+
     #[test]
     fn action_array_parser() {
         let incomplete = Err((None, &b""[..]));
