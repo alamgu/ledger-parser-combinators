@@ -82,6 +82,54 @@ impl<I : core_parsers::RV + ForwardParser, const N : usize > ForwardParser for c
     }
 }
 
+pub enum ForwardDArrayParserState<N : core_parsers::RV + ForwardParser, I : core_parsers::RV + ForwardParser, const M : usize > {
+    Length(N::State),
+    Elements(ArrayVec<I::R, M>, usize, I::State),
+    Done
+}
+
+use type_equals::TypeEquals;
+impl<N : core_parsers::RV + ForwardParser, I : core_parsers::RV + ForwardParser, const M : usize > ForwardParser for core_parsers::DArray<N, I, M> where <I as core_parsers::RV>::R: Copy, <N as core_parsers::RV>::R: TypeEquals<Other = usize> {
+    type State=ForwardDArrayParserState<N, I, M>;
+    fn init() -> Self::State {
+        ForwardDArrayParserState::<N, I, M>::Length(N::init())
+    }
+    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8]) -> RR<'a, Self>{
+        let core_parsers::DArray(number_parser, item_parser) = self;
+        use ForwardDArrayParserState::*;
+        let mut cursor : &'a [u8] = chunk;
+        loop {
+            match state {
+                Length(nstate) => {
+                    let (len, newcur) : (usize, &'a [u8]) = number_parser.parse(&mut nstate, chunk)?;
+                    cursor = newcur;
+                    *state = Elements(ArrayVec::new(), len, I::init());
+                }
+                Elements(vec, len, istate) => {
+                    break Err((Some(OOB::Reject), cursor));
+                }
+                Done => { break Err((Some(OOB::Reject), cursor)); }
+            }
+        }
+        /*
+        let mut remaining : &'a [u8] = chunk;
+        let core_parsers::Array(sub_p) = self;
+        while !state.buffer.is_full() {
+            match sub_p.parse(&mut state.sub, remaining)? {
+                (ret, new_chunk) => {
+                    remaining=new_chunk;
+                    state.buffer.push(ret);
+                    state.sub = I::init();
+                }
+            }
+        }
+        match state.buffer.take().into_inner() {
+            Ok(rv) => Ok((rv, remaining)),
+            Err(_) => Err((Some(OOB::Reject), remaining)) // Should be impossible, could just panic.
+        }
+        */
+    }
+}
 pub enum ActionState<I : ForwardParser, O> {
     ParsingInputs(I::State),
     StoredReturnValue(O),
