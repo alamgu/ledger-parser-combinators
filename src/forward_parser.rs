@@ -97,8 +97,6 @@ pub enum ForwardDArrayParserState<N : core_parsers::RV + ForwardParser, I : core
 }
 
 use core::convert::TryInto;
-extern crate std;
-use std::println;
 impl<N : ForwardParser, I : core_parsers::RV + ForwardParser, const M : usize > ForwardParser for core_parsers::DArray<N, I, M> where <I as core_parsers::RV>::R: Copy, N::R: TryInto<usize> {
     type State=ForwardDArrayParserState<N, I, M>;
     fn init() -> Self::State {
@@ -108,7 +106,6 @@ impl<N : ForwardParser, I : core_parsers::RV + ForwardParser, const M : usize > 
         let core_parsers::DArray(number_parser, item_parser) = self;
         use ForwardDArrayParserState::*;
         let mut cursor : &'a [u8] = chunk;
-        println!("Logging");
         loop {
             match state {
                 Length(ref mut nstate) => {
@@ -200,7 +197,6 @@ impl<I : core_parsers::RV + ForwardParser, O: Copy, F: Fn(&I::R) -> (O, Option<O
 
 #[cfg(test)]
 mod tests {
-    // extern crate std;
     use core::fmt::Debug;
     use super::{ForwardParser, OOB, RX};
     use crate::core_parsers::{Byte, Array, DArray, U16, U32, Action, RV};
@@ -267,9 +263,6 @@ mod tests {
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"ur"), Ok(([(),(),()], &b"ur"[..])));
     }
 
-    extern crate std;
-    use std::println;
-
     /*
     struct PT;
     
@@ -285,7 +278,6 @@ mod tests {
         let mut cursor : &[u8] = chunk_iter.next().unwrap();
         let mut parser_state = T::init();
         loop {
-            println!("Looping");
             match parser.parse(&mut parser_state, cursor) {
                 Err((Some(o), newCursor)) => {
                     cursor = newCursor;
