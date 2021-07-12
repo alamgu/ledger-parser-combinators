@@ -39,7 +39,7 @@ impl Try for RR<'a, I> {
 */
 
 pub trait ForwardParser : core_parsers::RV {
-    type State;
+    type State : Default;
     fn init() -> Self::State;
     fn init_method(&self) -> Self::State { Self::init() }
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8]) -> RR< 'a, Self>;
@@ -61,6 +61,7 @@ impl ForwardParser for core_parsers::Byte {
     }
 }
 
+#[derive(Default)]
 pub struct ForwardArrayParserState<I : core_parsers::RV + ForwardParser, const N : usize > {
     buffer: ArrayVec<I::R, N>, //GenericArrayVec<I::R,N>,
     sub: I::State
@@ -94,6 +95,11 @@ pub enum ForwardDArrayParserState<N : core_parsers::RV + ForwardParser, I : core
     Length(N::State),
     Elements(ArrayVec<I::R, M>, usize, I::State),
     Done
+}
+impl Default for ForwardDArrayParserState<N, I, M> {
+    fn default() -> Self {
+        Length(N::init())
+    }
 }
 
 use core::convert::TryInto;
@@ -134,6 +140,7 @@ impl<N : ForwardParser, I : core_parsers::RV + ForwardParser, const M : usize > 
 
 macro_rules! number_parser {
     ($p:ident, $state:ident, $size:expr) => {
+        #[derive(Default)]
         pub struct $state<const E : Endianness>(ForwardArrayParserState<core_parsers::Byte, $size>);
 
         impl<const E : Endianness> ForwardParser for core_parsers::$p<E> where Self::R : Convert::<E> {
@@ -160,6 +167,11 @@ pub enum ActionState<I : ForwardParser, O> {
     ParsingInputs(I::State),
     StoredReturnValue(O),
     Done
+}
+impl Default for ActionState<I,O> {
+    fn default() -> Self {
+        ParsingInputs(I::init())
+    }
 }
 
 impl<I : core_parsers::RV + ForwardParser, O: Copy, F: Fn(&I::R) -> (O, Option<OOB>)> ForwardParser for core_parsers::Action<I, O, OOB, F> {
