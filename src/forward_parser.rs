@@ -41,6 +41,7 @@ impl Try for RR<'a, I> {
 pub trait ForwardParser : core_parsers::RV {
     type State;
     fn init() -> Self::State;
+    fn init_method(&self) -> Self::State { Self::init() }
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8]) -> RR< 'a, Self>;
 }
 
@@ -95,8 +96,10 @@ pub enum ForwardDArrayParserState<N : core_parsers::RV + ForwardParser, I : core
     Done
 }
 
-use type_equals::TypeEquals;
-impl<N : core_parsers::RV + ForwardParser, I : core_parsers::RV + ForwardParser, const M : usize > ForwardParser for core_parsers::DArray<N, I, M> where <I as core_parsers::RV>::R: Copy, <N as core_parsers::RV>::R: TypeEquals<Other = usize> {
+use core::convert::TryInto;
+extern crate std;
+use std::println;
+impl<N : ForwardParser, I : core_parsers::RV + ForwardParser, const M : usize > ForwardParser for core_parsers::DArray<N, I, M> where <I as core_parsers::RV>::R: Copy, N::R: TryInto<usize> {
     type State=ForwardDArrayParserState<N, I, M>;
     fn init() -> Self::State {
         ForwardDArrayParserState::<N, I, M>::Length(N::init())
@@ -105,36 +108,30 @@ impl<N : core_parsers::RV + ForwardParser, I : core_parsers::RV + ForwardParser,
         let core_parsers::DArray(number_parser, item_parser) = self;
         use ForwardDArrayParserState::*;
         let mut cursor : &'a [u8] = chunk;
+        println!("Logging");
         loop {
             match state {
-                Length(nstate) => {
-                    let (len, newcur) : (usize, &'a [u8]) = number_parser.parse(&mut nstate, chunk)?;
+                Length(ref mut nstate) => {
+                    let (len_temp, newcur) : (_, &'a [u8]) = number_parser.parse(nstate, chunk)?;
                     cursor = newcur;
+                    let len = len_temp.try_into().or(Err((Some(OOB::Reject), newcur)))?;
                     *state = Elements(ArrayVec::new(), len, I::init());
                 }
-                Elements(vec, len, istate) => {
-                    break Err((Some(OOB::Reject), cursor));
+                Elements(ref mut vec, len, ref mut istate) => {
+                    while vec.len() < *len {
+                        match item_parser.parse(istate, cursor)? {
+                            (ret, new_cursor) => {
+                                cursor=new_cursor;
+                                vec.push(ret);
+                                *istate = I::init();
+                            }
+                        }
+                    }
+                    break Ok((vec.clone(), cursor));
                 }
                 Done => { break Err((Some(OOB::Reject), cursor)); }
             }
         }
-        /*
-        let mut remaining : &'a [u8] = chunk;
-        let core_parsers::Array(sub_p) = self;
-        while !state.buffer.is_full() {
-            match sub_p.parse(&mut state.sub, remaining)? {
-                (ret, new_chunk) => {
-                    remaining=new_chunk;
-                    state.buffer.push(ret);
-                    state.sub = I::init();
-                }
-            }
-        }
-        match state.buffer.take().into_inner() {
-            Ok(rv) => Ok((rv, remaining)),
-            Err(_) => Err((Some(OOB::Reject), remaining)) // Should be impossible, could just panic.
-        }
-        */
     }
 }
 
@@ -203,8 +200,11 @@ impl<I : core_parsers::RV + ForwardParser, O: Copy, F: Fn(&I::R) -> (O, Option<O
 
 #[cfg(test)]
 mod tests {
+    // extern crate std;
+    use core::fmt::Debug;
     use super::{ForwardParser, OOB, RX};
-    use crate::core_parsers::{Byte, Array, Action};
+    use crate::core_parsers::{Byte, Array, DArray, U16, U32, Action, RV};
+    use arrayvec::ArrayVec;
 
     const fn incomplete<X>() -> RX<'static, X> {
         Err((None, &[]))
@@ -265,5 +265,110 @@ mod tests {
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"ee"), Err((Some(OOB::Prompt([ArrayString::new(),ArrayString::new()])), &b""[..])));
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"zbur"), Err((Some(OOB::Prompt([ArrayString::new(),ArrayString::new()])), &b"ur"[..])));
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"ur"), Ok(([(),(),()], &b"ur"[..])));
+    }
+
+    extern crate std;
+    use std::println;
+
+    /*
+    struct PT;
+    
+    trait ParserTest;
+
+    impl<T: ForwardParser, RT: Debug + PartialEq<T::R> = <T as RV>::R> ParserTest for PT{
+    */
+
+    fn parser_test_feed<T: ForwardParser, RT: Debug + ?Sized>(parser: T, chunks: &[&[u8]], result: &RT, oobs: &[OOB]) where T::R: PartialEq<RT> + Debug
+    {
+        let mut oob_iter = oobs.iter();
+        let mut chunk_iter = chunks.iter();
+        let mut cursor : &[u8] = chunk_iter.next().unwrap();
+        let mut parser_state = T::init();
+        loop {
+            println!("Looping");
+            match parser.parse(&mut parser_state, cursor) {
+                Err((Some(o), newCursor)) => {
+                    cursor = newCursor;
+                    assert_eq!(Some(&o), oob_iter.next());
+                    match o {
+                        OOB::Reject => {
+                            assert_eq!(oob_iter.next(), None);
+                            assert_eq!(chunk_iter.next(), None);
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                Err((None, newCursor)) => {
+                    assert_eq!(newCursor, &[][..]);
+                    match chunk_iter.next() {
+                        Some(new) => { 
+                            cursor = new;
+                        }
+                        None => {
+                            panic!("Ran out of input chunks before parser accepted");
+                        }
+                    }
+                }
+                Ok((rv, newCursor)) => {
+                    assert_eq!(&rv, result);
+                    assert_eq!(newCursor, &[][..]);
+                    assert_eq!(chunk_iter.next(), None);
+                    assert_eq!(oob_iter.next(), None);
+                    break;
+                }
+            }
+        }
+    }
+    // }
+
+    use core::iter::FromIterator;
+    use crate::endianness::Endianness;
+    use arrayvec::ArrayString;
+    use core::fmt::Write;
+
+    fn prompt(a: &str, b: &str) -> OOB {
+        OOB::Prompt([ArrayString::from(a).unwrap(), ArrayString::from(b).unwrap()])
+    }
+
+    #[test]
+    fn test_darray() {
+        let parser = DArray::<_,_,5>(Byte, Byte);
+        parser_test_feed(parser, &[b"\0"], &b""[..], &[]);
+        let parser = DArray::<_,_,5>(Byte, Byte);
+        parser_test_feed(parser, &[b"\x05abcde"], &b"abcde"[..], &[]);
+        let parser = DArray::<_,_,10>(Byte, U32::< {Endianness::Big }>);
+        parser_test_feed(parser, &[&[4, 0,0,0,0, 0,0,0,1, 0,0,1,0, 0,1,0,0]], &[0,1,256,65536][..], &[]);
+        let parser = DArray::<_,_,10>(Byte, U32::< {Endianness::Little }>);
+        parser_test_feed(parser, &[&[4, 0,0,0,0, 1,0,0,0, 0,1,0,0, 0,0,1,0]], &[0,1,256,65536][..], &[]);
+
+        let parser = Action {
+            f: |x: &ArrayVec<_,10>| -> (u32, Option<OOB>) { (x.iter().sum(), None) },
+            sub: (DArray::<_,_,10>(U16::< {Endianness::Little } >, U32::<{Endianness::Big}>)),
+        };
+        parser_test_feed(parser, &[&[2,0, 0,0,1,1, 0,1,2,1]], &66306, &[]);
+        
+        let parser = Action {
+            f: |x: &ArrayVec<_,10>| -> (u32, Option<OOB>) { 
+                let title = ArrayString::from("Sum is:").unwrap();
+                let mut buf = ArrayString::<128>::new();
+                let theSum = x.iter().sum();
+                write!(&mut buf, "{}", theSum);
+                (theSum, Some(OOB::Prompt([title, buf])))
+            },
+            sub: (DArray::<_,_,10>(Action {
+                sub: U16::< {Endianness::Little } >,
+                f: |x| {
+                    let mut buf = ArrayString::<128>::new();
+                    write!(&mut buf, "Summing {} elements", x);
+                    (*x, Some(OOB::Prompt([buf, ArrayString::from("pong").unwrap()])))
+                }
+            }, U32::<{Endianness::Big}>)),
+        };
+        parser_test_feed(parser, &[&[2,0, 0,0,1,1, 0,1,2,1]], &66306, 
+                         &[
+                         prompt("Summing 2 elements", "pong"),
+                         prompt("Sum is:", "66306")
+                         ]);
     }
 }

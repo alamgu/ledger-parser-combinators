@@ -21,8 +21,9 @@ impl< I : RV, const N : usize > RV for Array<I, N> {
 pub struct DArray<N, I, const M : usize>(pub N, pub I);
 
 use arrayvec::ArrayVec;
+use core::convert::TryInto;
 impl< N : RV, I : RV, const M : usize > RV for DArray<N, I, M> where
-   <N as RV>::R: TypeEquals<Other = usize>
+   <N as RV>::R: TryInto<usize>
 {
     type R = ArrayVec<I::R, M>;
 }
