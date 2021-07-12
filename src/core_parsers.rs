@@ -51,9 +51,8 @@ number_parser! { U64, u64 }
 
 pub struct NOf<I, N>(pub N, pub I);
 
-use type_equals::TypeEquals;
 impl< I : RV, N : RV > RV for NOf<I, N> where
-   <I as RV>::R: TypeEquals<Other = ()>, <N as RV>::R: TypeEquals<Other = usize>
+   <I as RV>::R: TryInto<()>, <N as RV>::R: TryInto<usize>
 {
     type R = ();
 }
