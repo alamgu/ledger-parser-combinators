@@ -61,11 +61,20 @@ impl ForwardParser for core_parsers::Byte {
     }
 }
 
-#[derive(Default)]
+// #[derive(Default)]
 pub struct ForwardArrayParserState<I : core_parsers::RV + ForwardParser, const N : usize > {
     buffer: ArrayVec<I::R, N>, //GenericArrayVec<I::R,N>,
     sub: I::State
 }
+
+
+impl <I: ForwardParser, const N: usize> Default for ForwardArrayParserState<I,N> {
+
+    fn default() -> Self {
+        Self { buffer: ArrayVec::<I::R,N>::new(), sub: I::init() }
+    }
+}
+
 
 impl<I : core_parsers::RV + ForwardParser, const N : usize > ForwardParser for core_parsers::Array<I, N> where <I as core_parsers::RV>::R: Copy {
     type State = ForwardArrayParserState<I, N>;
@@ -96,9 +105,9 @@ pub enum ForwardDArrayParserState<N : core_parsers::RV + ForwardParser, I : core
     Elements(ArrayVec<I::R, M>, usize, I::State),
     Done
 }
-impl Default for ForwardDArrayParserState<N, I, M> {
+impl<N: ForwardParser,I: ForwardParser, const M : usize> Default for ForwardDArrayParserState<N, I, M> {
     fn default() -> Self {
-        Length(N::init())
+        Self::Length(N::init())
     }
 }
 
@@ -168,9 +177,9 @@ pub enum ActionState<I : ForwardParser, O> {
     StoredReturnValue(O),
     Done
 }
-impl Default for ActionState<I,O> {
+impl<I : ForwardParser, O> Default for ActionState<I,O> {
     fn default() -> Self {
-        ParsingInputs(I::init())
+        Self::ParsingInputs(I::init())
     }
 }
 
@@ -207,8 +216,15 @@ impl<I : core_parsers::RV + ForwardParser, O: Copy, F: Fn(&I::R) -> (O, Option<O
     }
 }
 
+
 #[cfg(test)]
 mod tests {
+
+#[cfg(all(not(target_os="linux"), test))]
+    use testmacro::test_item as test;
+#[cfg(all(not(target_os="linux"), test))]
+    use nanos_sdk::TestType;
+
     use core::fmt::Debug;
     use super::{ForwardParser, OOB, RX};
     use crate::core_parsers::{Byte, Array, DArray, U16, U32, Action, RV};
@@ -226,15 +242,50 @@ mod tests {
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b""), Err((None, &b""[..])));
     }
 
-    #[test]
+    #[test] // Passes
     fn array_parser() {
         let parser : Array<Byte, 3> = Default::default();
         let mut parser_state = Array::init();
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"ch"), Err((None, &b""[..])));
-        parser_state = Array::init();
-        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"cheez"), Ok((*b"che", &b"ez"[..])));
+    }
+    
+    #[test]
+    pub fn test_write() {
+        use nanos_sdk::debug_print;
+        use core::fmt::Write;
+        debug_print("DEBUG\n");
+        let mut s = arrayvec::ArrayString::<20>::new();
+        debug_print("DEBUG\n");
+        write!(&mut s, "hello"); // Segfault.
+        debug_print("DEBUG\n");
     }
 
+    #[test] // Segfaults
+    pub fn array_parser_3() {
+        {
+        let parser = Array::<_,3>(Byte);
+        let mut parser_state = parser.init_method();
+        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"ch"), Err((None, &b""[..])));
+        }
+        {
+        let parser_2 = Array::<_,3>(Byte);
+        let mut parser_state_2 = parser_2.init_method();
+        assert_eq!(ForwardParser::parse(&parser_2, &mut parser_state_2, b"ch"), Err((None, &b""[..])));
+        }
+    }
+
+    #[test]
+    fn array_parser_2() {
+        let parser : Array<Byte, 3> = Default::default();
+        let mut parser_state = Array::init();
+        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"ch"), Err((None, &b""[..])));
+        parser_state = Array::init();
+        // let mut parser_state2 = Array::init();
+        // assert_eq!(ForwardParser::parse(&parser, &mut parser_state2, b"ch"), Err((None, &b""[..])));
+        // assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"cheez"), Ok((*b"che", &b"ez"[..])));
+    }
+
+    /*
     #[test]
     fn array_parser_second_tier() {
         let parser : Array<Array<Byte, 2>, 3> = Default::default();
@@ -274,6 +325,7 @@ mod tests {
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"zbur"), Err((Some(OOB::Prompt([ArrayString::new(),ArrayString::new()])), &b"ur"[..])));
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"ur"), Ok(([(),(),()], &b"ur"[..])));
     }
+    */
 
     /*
     struct PT;
@@ -283,6 +335,7 @@ mod tests {
     impl<T: ForwardParser, RT: Debug + PartialEq<T::R> = <T as RV>::R> ParserTest for PT{
     */
 
+/*
     fn parser_test_feed<T: ForwardParser, RT: Debug + ?Sized>(parser: T, chunks: &[&[u8]], result: &RT, oobs: &[OOB]) where T::R: PartialEq<RT> + Debug
     {
         let mut oob_iter = oobs.iter();
@@ -375,4 +428,5 @@ mod tests {
                          prompt("Sum is:", "66306")
                          ]);
     }
+    */
 }
