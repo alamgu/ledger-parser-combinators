@@ -6,6 +6,8 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[profile.release]
+opt-level = 0
 [profile.dev]
 opt-level = 0
 
@@ -15,7 +17,7 @@ arrayvec = { version = "0.7.1", default-features = false }
 generic-array = { version = "0.14.4", default-features = false }
 log = "0.4.14"
 
-[dev-dependencies]
+[target.thumbv6m-none-eabi.dev-dependencies]
 nanos_sdk = { git = "https://github.com/LedgerHQ/ledger-nanos-sdk.git", features = [ "speculos" ] } 
 testmacro = { git = "https://github.com/yhql/testmacro"}
 

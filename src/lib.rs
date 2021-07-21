@@ -1,10 +1,10 @@
 #![no_std]
 #![feature(const_generics)]
 
-#![cfg_attr(test, no_main)]
-#![feature(custom_test_frameworks)]
+#![cfg_attr(all(target_os="nanos", test), no_main)]
+#![cfg_attr(target_os="nanos", feature(custom_test_frameworks))]
 #![reexport_test_harness_main = "test_main"]
-#![test_runner(nanos_sdk::sdk_test_runner)]
+#![cfg_attr(target_os="nanos", test_runner(nanos_sdk::sdk_test_runner))]
 
 #[cfg(all(not(target_os = "linux"), test))]
 use nanos_sdk::exit_app;
@@ -21,7 +21,8 @@ use core::panic::PanicInfo;
 #[cfg(all(not(target_os = "linux"), test))]
 #[panic_handler]
 fn handle_panic(_: &PanicInfo) -> ! {
-    exit_app(0)
+    loop { }
+    // exit_app(0)
 }
 
 
