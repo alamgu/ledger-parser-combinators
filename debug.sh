@@ -24,15 +24,32 @@ function main()
 
 #source ${gdbinit}
     cat >/tmp/x.gdb<<EOF
+define connect
 set architecture arm
 target remote 127.0.0.1:1234
 handle SIGILL nostop pass noprint
+catch signal SIGSEGV
 add-symbol-file "${launcher_path}" ${launcher_text_addr}
 add-symbol-file "${app}" 0x40000000
 set substitute-path library "${rustLibSrc}"
 set substitute-path /rustc/53cb7b09b00cbea8754ffb78e7e3cb521cb8af4b/library "${rustLibSrc}"
 b *0x40000000
 c
+end
+set history save on
+set history size unlimited
+set print asm-demangle
+define incrementalDisassemble
+define hook-stop
+disassemble /s \$pc-8,\$pc+8
+end
+end
+define restart
+kill
+shell sleep 1 
+connect
+end
+connect
 EOF
 
     gdb -q -nh -x /tmp/x.gdb

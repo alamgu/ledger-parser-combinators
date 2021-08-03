@@ -256,7 +256,6 @@ mod tests {
     use core;
     impl core::fmt::Write for DBG {
         fn write_str(&mut self, s: &str) -> core::fmt::Result {
-            debug_print("DEBUG_INNER\n");
             debug_print(s);
             Ok(())
         }
@@ -277,25 +276,9 @@ mod tests {
         } else {
             debug_print("Pointer smaller.\n");
         }*/
-        let foo = Pic::new("foo");
+        let foo = "foo";
         // write!(DBG, "{:p}", (foo as *const str)); // , unsafe { "hello\n" });
-        write!(DBG, "{}", foo.get_ref()); // , unsafe { "hello\n" });
-        debug_print("DEBUG\n");
-    }
-
-    /*
-    #[test] // Segfaults
-    pub fn array_parser_3() {
-        {
-        let parser = Array::<_,3>(Byte);
-        let mut parser_state = parser.init_method();
-        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"ch"), Err((None, &b""[..])));
-        }
-        {
-        let parser_2 = Array::<_,3>(Byte);
-        let mut parser_state_2 = parser_2.init_method();
-        assert_eq!(ForwardParser::parse(&parser_2, &mut parser_state_2, b"ch"), Err((None, &b""[..])));
-        }
+        write!(DBG, "{}\n", foo); // , unsafe { "hello\n" });
     }
 
     #[test]
@@ -308,16 +291,35 @@ mod tests {
         // assert_eq!(ForwardParser::parse(&parser, &mut parser_state2, b"ch"), Err((None, &b""[..])));
         // assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"cheez"), Ok((*b"che", &b"ez"[..])));
     }
+    
+    #[test] // Segfaults
+    pub fn array_parser_3() {
+        {
+        let parser = Array::<_,3>(Byte);
+        let mut parser_state = parser.init_method();
+        // ForwardParser::parse(&parser, &mut parser_state, b"ch");
+        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"ch"), Err((None, &b""[..])));
+        }
+        {
+        let parser_2 = Array::<_,3>(Byte);
+        let mut parser_state_2 = parser_2.init_method();
+        //let rv = ForwardParser::parse(&parser_2, &mut parser_state_2, b"ch");
+        //if(rv != Err((None, &b""[..]))) {
+        //    panic!("Failed");
+        //}
+        assert_eq!(ForwardParser::parse(&parser_2, &mut parser_state_2, b"ch"), Err((None, &b""[..])));
+        }
+    }
 
     #[test]
     fn array_parser_second_tier() {
         let parser : Array<Array<Byte, 2>, 3> = Default::default();
         let mut parser_state = Array::init();
         assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"chee"), incomplete());
-        parser_state = Array::init();
-        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"cheez"), incomplete());
-        parser_state = Array::init();
-        assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"cheezbur"), Ok(([*b"ch",*b"ee",*b"zb"],&b"ur"[..])));
+        //parser_state = Array::init();
+        //assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"cheez"), incomplete());
+        //parser_state = Array::init();
+        //assert_eq!(ForwardParser::parse(&parser, &mut parser_state, b"cheezbur"), Ok(([*b"ch",*b"ee",*b"zb"],&b"ur"[..])));
     }
 
     #[test]
@@ -396,6 +398,7 @@ mod tests {
                     break;
                 }
             }
+            break;
         }
     }
     // }
@@ -449,5 +452,4 @@ mod tests {
                          prompt("Sum is:", "66306")
                          ]);
     }
-    */
 }

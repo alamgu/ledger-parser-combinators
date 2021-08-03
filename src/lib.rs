@@ -9,8 +9,23 @@
 #[cfg(all(not(target_os = "linux"), test))]
 use nanos_sdk::exit_app;
 #[cfg(all(not(target_os = "linux"), test))]
+use nanos_sdk::pic_rs;
+
+static refpos: usize = 1282;
+
+#[no_mangle]
+static mut ro_offset: isize = 0;
+
+#[cfg(all(not(target_os = "linux"), test))]
 #[no_mangle]
 extern "C" fn sample_main() {
+
+    let modfoo = pic_rs(&refpos);
+    unsafe {
+    let ptrdiff = (&refpos as * const usize).offset_from(modfoo);
+    ro_offset = ptrdiff;
+    }
+    // let ptrdiff = ((foo as *const str) as usize) - ((modfoo as *const str) as usize);
     use nanos_sdk::exit_app;
     test_main();
     exit_app(0);

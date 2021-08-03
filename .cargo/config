@@ -1,12 +1,19 @@
+[unstable]
+build-std = ["core"]
+
 [target.thumbv6m-none-eabi]
 rustflags = [ 
   "-C", "relocation-model=ropi",
   "-C", "link-arg=-Tscript.ld",
   "-Z", "emit-stack-sizes",
   "--cfg", "target_os=\"nanos\"",
-  "-C", "opt-level=0",
+  "-C", "opt-level=3",
+  "-C", "link-arg=--target=thumbv6m-none-eabi",
+  "-C", "passes=ledger-ropi",
+  "--cfg", "target_os=\"nanos\"",
   "--emit=llvm-ir"
 ]
+linker = "clang"
 runner = "speculos --display headless -k 2.0"
 
 [build]
