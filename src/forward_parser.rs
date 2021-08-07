@@ -183,7 +183,7 @@ impl<I : ForwardParser, O> Default for ActionState<I,O> {
     }
 }
 
-impl<I : core_parsers::RV + ForwardParser, O: Copy, F: Fn(&I::R) -> (O, Option<OOB>)> ForwardParser for core_parsers::Action<I, O, OOB, F> {
+impl<I : core_parsers::RV + ForwardParser, O: Clone, F: Fn(&I::R) -> (O, Option<OOB>)> ForwardParser for core_parsers::Action<I, O, OOB, F> {
     type State = ActionState<I, O>;
     fn init() -> Self::State {
         Self::State::ParsingInputs(I::init())
@@ -198,14 +198,14 @@ impl<I : core_parsers::RV + ForwardParser, O: Copy, F: Fn(&I::R) -> (O, Option<O
                             Ok((rv, new_chunk))
                         }
                         (rv, Some(oob)) => {
-                            *state = ActionState::StoredReturnValue(rv);
+                            *state = ActionState::StoredReturnValue(rv.clone());
                             Err((Some(oob), new_chunk))
                         }
                     }
                 }
             }
             ActionState::StoredReturnValue(rv) => {
-                let rv_temp = *rv;
+                let rv_temp = rv.clone();
                 *state = ActionState::Done;
                 Ok((rv_temp, chunk))
             }
