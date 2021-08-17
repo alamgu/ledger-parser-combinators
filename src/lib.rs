@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(incomplete_features)]
 #![feature(const_generics)]
 
 #![cfg_attr(all(target_os="nanos", test), no_main)]
@@ -6,11 +7,13 @@
 #![reexport_test_harness_main = "test_main"]
 #![cfg_attr(target_os="nanos", test_runner(nanos_sdk::sdk_test_runner))]
 
-#[cfg(all(not(target_os = "linux"), test))]
-use nanos_sdk::exit_app;
+//#[cfg(all(not(target_os = "linux"), test))]
+//use nanos_sdk::exit_app;
 #[cfg(all(not(target_os = "linux"), test))]
 use nanos_sdk::pic_rs;
 
+#[allow(dead_code)]
+#[allow(non_upper_case_globals)]
 static refpos: usize = 1282;
 
 #[no_mangle]
@@ -36,13 +39,15 @@ use core::panic::PanicInfo;
 #[cfg(all(not(target_os = "linux"), test))]
 #[panic_handler]
 fn handle_panic(_: &PanicInfo) -> ! {
-    loop { }
-    // exit_app(0)
+    use nanos_sdk::exit_app;
+    exit_app(0);
 }
 
 
 pub mod core_parsers;
 
-pub mod forward_parser;
+// pub mod forward_parser;
 
 pub mod endianness;
+
+pub mod interp_parser;
