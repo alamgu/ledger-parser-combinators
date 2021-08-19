@@ -24,7 +24,8 @@ pub trait InterpParser<P> {
 }
 
 pub struct DefaultInterp;
-pub struct SubInterp<S>(S);
+pub struct SubInterp<S>(pub S);
+pub struct DropInterp;
 
 pub struct ByteState;
 
@@ -37,6 +38,20 @@ impl InterpParser<Byte> for DefaultInterp {
             None => Err((None, chunk)),
             Some((first, rest)) => {
                 Ok((*first, rest))
+            }
+        }
+    }
+}
+
+impl InterpParser<Byte> for DropInterp {
+    type State = ();
+    type Returning = ();
+    fn init(&self) -> Self::State { () }
+    fn parse<'a, 'b>(&self, _state: &'b mut Self::State, chunk: &'a [u8]) -> RX<'a, Self::Returning> {
+        match chunk.split_first() {
+            None => Err((None, chunk)),
+            Some((_, rest)) => {
+                Ok(((), rest))
             }
         }
     }
@@ -97,10 +112,10 @@ pub enum ForwardDArrayParserState<N, IS, I, const M : usize > {
     Done
 }
 
-use core::convert::TryInto;
+use core::convert::TryFrom;
 impl<N, I, S : InterpParser<I>, const M : usize> InterpParser<DArray<N, I, M> > for SubInterp<S> where
     DefaultInterp : InterpParser<N>,
-    usize: From<<DefaultInterp as InterpParser<N>>::Returning>,
+    usize: TryFrom<<DefaultInterp as InterpParser<N>>::Returning>,
     <S as InterpParser<I>>::Returning: Clone{
     type State=ForwardDArrayParserState<<DefaultInterp as InterpParser<N>>::State, <S as InterpParser<I>>::State, <S as InterpParser<I>>::Returning, M>;
     type Returning = ArrayVec<<S as InterpParser<I>>::Returning, M>;
@@ -115,7 +130,7 @@ impl<N, I, S : InterpParser<I>, const M : usize> InterpParser<DArray<N, I, M> > 
                 Length(ref mut nstate) => {
                     let (len_temp, newcur) : (_, &'a [u8]) = <DefaultInterp as InterpParser<N>>::parse(&DefaultInterp, nstate, chunk)?;
                     cursor = newcur;
-                    let len = len_temp.try_into().or(Err((Some(OOB::Reject), newcur)))?;
+                    let len = <usize as TryFrom<<DefaultInterp as InterpParser<N>>::Returning>>::try_from(len_temp).or(Err((Some(OOB::Reject), newcur)))?;
                     *state = Elements(ArrayVec::new(), len, <S as InterpParser<I>>::init(&self.0));
                 }
                 Elements(ref mut vec, len, ref mut istate) => {
@@ -169,7 +184,7 @@ impl< N, I, const M : usize> InterpParser<DArray<N, I, M>> for DefaultInterp whe
 // use core::marker::PhantomData;
 // pub struct ActionInterp<A, B, C, F : FnMut(<S as InterpParser<A>>::Returning) -> (B, Option<C>), S : InterpParser<A> >(F, S, PhantomData<(A,B,C)>);
 
-pub struct ActionInterp<F, S>(F,S);
+pub struct ActionInterp<F, S>(pub F, pub S);
 
 pub enum ActionState<S, O> {
     ParsingInputs(S),
@@ -213,7 +228,7 @@ impl<A, R: Clone, F: Fn(&<S as InterpParser<A>>::Returning) -> (R, Option<OOB>),
 }
 
 
-pub struct ObserveBytes<X, F, S>(X, F, S);
+pub struct ObserveBytes<X, F, S>(pub X, pub F, pub S);
 
 impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<A> for ObserveBytes<X, F, S>
     {
@@ -230,6 +245,52 @@ impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<
         Ok(((state.0.clone(), fin_rv), remaining))
     }
 }
+
+pub enum PairState<A, B, R> {
+  First(A),
+  Second(R, B),
+}
+
+impl<A : InterpParser<C>, B : InterpParser<D>, C, D> InterpParser<(C, D)> for (A, B) where
+    <A as InterpParser<C>>::Returning: Clone {
+    type State = PairState<<A as InterpParser<C>>::State, <B as InterpParser<D>>::State, A::Returning>;
+    type Returning = (A::Returning, B::Returning);
+    fn init(&self) -> Self::State {
+        PairState::First(<A as InterpParser<C>>::init(&self.0))
+    }
+    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8]) -> RX<'a, Self::Returning> {
+        match state {
+            PairState::First(ref mut sub) => match <A as InterpParser<C> >::parse(&self.0, sub, chunk)? {
+                (ret, new_chunk) => {
+                    *state = PairState::Second(ret.clone(), <B as InterpParser<D>>::init(&self.1));
+                    Err((None, new_chunk))
+                }
+            }
+            PairState::Second(a_ret, ref mut sub) => match <B as InterpParser<D> >::parse(&self.1, sub, chunk)? {
+                (b_ret, new_chunk) => {
+                    Ok(((a_ret.clone(), b_ret), new_chunk))
+                }
+            }
+        }
+    }
+}
+
+/*
+#[macro_export]
+macro_rules! def_table {
+    {struct $name:ident { $($fieldName:ident : $type:ty),+ } } => 
+    {
+        struct $name<$($fieldName),+> {
+            $($fieldName: $fieldName),+
+        }
+    }
+
+    enum 
+    impl<$($fieldName : InterpParser<$type>),+> InterpParser<$name<$($fieldName),+>> for $name<$($fieldName),+> {
+
+    }
+}
+*/
 
 #[cfg(test)]
 mod test {
