@@ -223,14 +223,14 @@ mod tests {
 #[cfg(all(target_os="nanos", test))]
     use testmacro::test_item as test;
 #[cfg(all(target_os="nanos", test))]
-    use nanos_sdk::{TestType, debug_print, Pic};
+    use nanos_sdk::{TestType, debug_print};
 #[cfg(all(not(target_os="nanos"), test))]
     fn debug_print(s: &str) {
     }
 
     use core::fmt::Debug;
     use super::{ForwardParser, OOB, RX};
-    use crate::core_parsers::{Byte, Array, DArray, U16, U32, Action, RV};
+    use crate::core_parsers::{Byte, Array, DArray, U16, U32, Action };
     use arrayvec::ArrayVec;
 
     const fn incomplete<X>() -> RX<'static, X> {
@@ -403,7 +403,6 @@ mod tests {
     }
     // }
 
-    use core::iter::FromIterator;
     use crate::endianness::Endianness;
     use arrayvec::ArrayString;
     use core::fmt::Write;

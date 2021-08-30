@@ -1,20 +1,32 @@
 use crate::core_parsers::*;
-// use crate::endianness::{Endianness, Convert};
-use arrayvec::{ArrayVec, ArrayString};
+use crate::endianness::{Endianness, Convert};
+use arrayvec::ArrayVec;
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum OOB {
-    Prompt([ArrayString<128>; 2]),
+    // Prompt removed due to excessive memory use; we gain testability improvements if we can
+    // reinstate an OOB for prompts and do the co-routine again, but we can't do that at this
+    // memory use.
+    //
+    // Prompt([ArrayString<128>;2]),
     Reject
 }
 
 // None = Incomplete
-type PResult<T> = Option<T>;
+pub type PResult<T> = Option<T>;
 
-type RX<'a, R> = Result<(R, &'a [u8]), (PResult<OOB>, &'a [u8] )>;
+pub type RX<'a, R> = Result<(R, &'a [u8]), (PResult<OOB>, &'a [u8] )>;
 
-// type RR<'a, I> = RX<'a, <I as core_parsers::RV>::R>;
+pub fn reject<'a, R>(chunk: &'a [u8]) -> Result<R, (PResult<OOB>, &'a [u8])> {
+    Err((Some(OOB::Reject), chunk))
+}
 
+pub fn need_more<'a, R>(chunk: &'a [u8]) -> Result<R, (PResult<OOB>, &'a [u8])> {
+    Err((None, chunk))
+}
+
+// Core trait; describes an "interpretation" of a given datatype (specified with the types from
+// core_parsers), which can have a variable return type and do stateful actions.
 
 pub trait InterpParser<P> {
     type State;
@@ -24,7 +36,11 @@ pub trait InterpParser<P> {
 }
 
 pub struct DefaultInterp;
+
 pub struct SubInterp<S>(pub S);
+
+// Structurally checks and skips the format, but consumes only the minimum memory required to do so
+// and returns nothing.
 pub struct DropInterp;
 
 pub struct ByteState;
@@ -86,7 +102,6 @@ impl<I, S : InterpParser<I>, const N : usize> InterpParser<Array< I, N>> for Sub
     }
 }
 
-use crate::endianness::{Endianness, Convert};
 macro_rules! number_parser {
     ($p:ident, $size:expr) => {
         impl<const E: Endianness> InterpParser<$p<E>> for DefaultInterp where <$p<E> as RV>::R : Convert<E> {
@@ -165,7 +180,7 @@ impl< I, const N : usize >  InterpParser<Array<I, N>> for DefaultInterp where
 }
 
 
-/*
+/* // TODO: determine why this doesn't work.
 impl< N, I, const M : usize> InterpParser<DArray<N, I, M>> for DefaultInterp where
     DefaultInterp : InterpParser<I> + InterpParser<N>, 
     usize: From<<DefaultInterp as InterpParser<N>>::Returning> {
@@ -180,62 +195,33 @@ impl< N, I, const M : usize> InterpParser<DArray<N, I, M>> for DefaultInterp whe
 }
 */
 
+pub struct Action<S, F>(pub S, pub F);
 
-// use core::marker::PhantomData;
-// pub struct ActionInterp<A, B, C, F : FnMut(<S as InterpParser<A>>::Returning) -> (B, Option<C>), S : InterpParser<A> >(F, S, PhantomData<(A,B,C)>);
-
-pub struct ActionInterp<F, S>(pub F, pub S);
-
-pub enum ActionState<S, O> {
-    ParsingInputs(S),
-    StoredReturnValue(O),
-    Done
-}
-
-impl<A, R: Clone, F: Fn(&<S as InterpParser<A>>::Returning) -> (R, Option<OOB>), S : InterpParser<A>> InterpParser<A> for ActionInterp<F, S> {
-    type State = ActionState< <S as InterpParser<A> >::State, R>;
+impl<A, R, F: Fn(&<S as InterpParser<A>>::Returning) -> Option<R>, S : InterpParser<A>> InterpParser<A> for Action<S, F> {
+    type State = <S as InterpParser<A> >::State;
     type Returning = R;
     fn init(&self) -> Self::State {
-        Self::State::ParsingInputs(<S as InterpParser<A>>::init(&self.1))
+        <S as InterpParser<A>>::init(&self.0)
     }
 
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8]) -> RX<'a, Self::Returning> {
-        match state {
-            ActionState::ParsingInputs(ref mut sub) => match <S as InterpParser<A> >::parse(&self.1, sub, chunk)? {
-                (ret, new_chunk) => {
-                    match (self.0)(&ret) {
-                        (rv, None) => {
-                            *state = ActionState::Done;
-                            Ok((rv, new_chunk))
-                        }
-                        (rv, Some(oob)) => {
-                            *state = ActionState::StoredReturnValue(rv.clone());
-                            Err((Some(oob), new_chunk))
-                        }
-                    }
-                }
-            }
-            ActionState::StoredReturnValue(rv) => {
-                let rv_temp = rv.clone();
-                *state = ActionState::Done;
-                Ok((rv_temp, chunk))
-            }
-            ActionState::Done => {
-                Err((Some(OOB::Reject), chunk))
-            }
+        let (ret, new_chunk) = self.0.parse(state, chunk)?;
+        match (self.1)(&ret) {
+            None => { Err((Some(OOB::Reject),new_chunk)) }
+            Some(rv) => { Ok((rv, new_chunk)) }
         }
     }
 }
 
 
-pub struct ObserveBytes<X, F, S>(pub X, pub F, pub S);
+pub struct ObserveBytes<X, F, S>(pub fn() -> X, pub F, pub S);
 
 impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<A> for ObserveBytes<X, F, S>
     {
     type State = (X, <S as InterpParser<A>>::State);
     type Returning = (X, <S as InterpParser<A>>::Returning);
     fn init(&self) -> Self::State {
-        (self.0.clone(), <S as InterpParser<A>>::init(&self.2))
+        ((self.0)(), <S as InterpParser<A>>::init(&self.2))
     }
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8]) -> RX<'a, Self::Returning> {
         let rv = <S as InterpParser<A>>::parse(&self.2, &mut state.1, chunk);
@@ -276,6 +262,9 @@ impl<A : InterpParser<C>, B : InterpParser<D>, C, D> InterpParser<(C, D)> for (A
 }
 
 /*
+ // TODO: handle struct-like data structures without using the pair parser above and with named
+ // fields.
+ //
 #[macro_export]
 macro_rules! def_table {
     {struct $name:ident { $($fieldName:ident : $type:ty),+ } } => 
@@ -319,9 +308,9 @@ mod test {
     }
 
     use core::fmt::Debug;
-    use super::{InterpParser, DefaultInterp, SubInterp, ActionInterp, ObserveBytes, OOB, RX};
+    use super::{InterpParser, DefaultInterp, SubInterp, Action, ObserveBytes, OOB, RX};
     #[allow(unused_imports)]
-    use crate::core_parsers::{Byte, Array, DArray, U16, U32, Action }; // , RV};
+    use crate::core_parsers::{Byte, Array, DArray, U16, U32 };
     #[allow(unused_imports)]
     use arrayvec::ArrayVec;
     
@@ -333,8 +322,7 @@ mod test {
         let mut parser_state = T::init(&parser);
         loop {
             match <T as InterpParser<P>>::parse(&parser, &mut parser_state, cursor) {
-                Err((Some(o), new_cursor)) => {
-                    cursor = new_cursor;
+                Err((Some(o), _new_cursor)) => {
                     assert_eq!(Some(&o), oob_iter.next());
                     match o {
                         OOB::Reject => {
@@ -342,7 +330,10 @@ mod test {
                             assert_eq!(chunk_iter.next(), None);
                             break;
                         }
-                        _ => {}
+                        // If there are any non-Reject OOB options uncomment this.
+                        // _ => {
+                        //    cursor = new_cursor; // Not sure why rustc claims this is unused.
+                        //}
                     }
                 }
                 Err((None, new_cursor)) => {
@@ -384,12 +375,9 @@ fn byte_parser() {
 
 #[test]
 fn interp_byte_parser() {
-    let p = super::ActionInterp(|x: &u8| ((x.clone()), None), DefaultInterp);
+    let p = super::Action(DefaultInterp, |x: &u8| Some(x.clone()));
     let mut state = init_parser::<Byte,_>(&p);
     assert_eq!(run_parser::<Byte,_>(&p, &mut state, b"cheez"), Ok((b'c', &b"heez"[..])));
-//    let mut state = (p as dyn InterpParser<Byte>).init(&DefaultInterp);
-//    assert_eq!(<DefaultInterp as InterpParser<Byte>>::parse(&DefaultInterp, &mut state, b"cheez"), Ok((b'c', &b"heez"[..])));
-//    assert_eq!(<DefaultInterp as InterpParser<Byte>>::parse(&DefaultInterp, &mut state, b""), Err((None, &b""[..])));
 }
 
 #[test]
@@ -400,13 +388,15 @@ fn test_array() {
 
 #[test]
     fn test_darray() {
+        use core::mem::size_of;
+        write!(DBG, "DArray test state size: {}\n", size_of::<<SubInterp<DefaultInterp> as InterpParser<DArray<Byte,Byte,5>>>::State>()).ok();
         parser_test_feed::<DArray<Byte,Byte,5>, _, _>(SubInterp(DefaultInterp), &[b"\0"], &b""[..], &[]);
         parser_test_feed::<DArray<Byte,Byte,5>, _, _>(SubInterp(DefaultInterp), &[b"\x05abcde"], &b"abcde"[..], &[]);
-        parser_test_feed::<DArray<Byte,Byte,5>, _, _>(SubInterp(ActionInterp(|_: &u8| ((), None),DefaultInterp)), &[b"\x05abcde"], &[(),(),(),(),()][..], &[]);
+        parser_test_feed::<DArray<Byte,Byte,5>, _, _>(SubInterp(Action(DefaultInterp, |_: &u8| Some(()))), &[b"\x05abcde"], &[(),(),(),(),()][..], &[]);
         let obs = ObserveBytes(
-            0, |a : &mut usize,b : &[u8]| { *a += b.len(); },
+            || 0, |a : &mut usize,b : &[u8]| { *a += b.len(); },
             SubInterp(
-                ActionInterp(|_: &u8| ((), None),DefaultInterp)));
+                Action(DefaultInterp, |_: &u8| Some(()))));
         parser_test_feed::<DArray<Byte,Byte,5>, _, _>(obs, &[b"\x05abcde"], &(6, (ArrayVec::from([(),(),(),(),()]))), &[]);
     }
 
