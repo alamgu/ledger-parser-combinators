@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(target_os="nanos", no_std)]
 #![allow(incomplete_features)]
 #![feature(const_generics)]
 
@@ -51,3 +51,5 @@ pub mod core_parsers;
 pub mod endianness;
 
 pub mod interp_parser;
+
+pub mod json_interp;
