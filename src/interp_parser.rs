@@ -290,7 +290,7 @@ mod test {
 #[allow(unused_imports)]
     use nanos_sdk::{TestType, debug_print}; // , Pic};
 #[cfg(all(not(target_os="nanos"), test))]
-    fn debug_print(s: &str) {
+    fn debug_print(_s: &str) {
     }
 
     struct DBG;
