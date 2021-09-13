@@ -310,22 +310,17 @@ impl<N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> InterpParser
                     let (len_temp, newcur) : (_, &'a [u8]) = <DefaultInterp as InterpParser<N>>::parse(&DefaultInterp, nstate, cursor)?;
                     cursor = newcur;
                     let len = <usize as TryFrom<<DefaultInterp as InterpParser<N>>::Returning>>::try_from(len_temp).or(Err((Some(OOB::Reject), newcur)))?;
-                    let _=write!(DBG, "Parsed length: {}\n", len);
                     state.0 = Element(0, len, <S as InterpParser<I>>::init(&self.2));
                     continue;
                 }
                 Element(ref mut consumed, len, ref mut istate) => {
-                    let _=write!(DBG, "Parsing a chunk: conusmed = {} chunkLen = {} len = {}\n", consumed, cursor.len(), len);
                     let passed_cursor = &cursor[0..core::cmp::min(cursor.len(), (len)-(*consumed))];
-                    let _=write!(DBG, "PASSED CURSOR\n------{:?}\n------\n", passed_cursor);
                     match self.2.parse(istate, passed_cursor) {
                         Ok((ret, new_cursor)) => {
                             let consumed_from_chunk = passed_cursor.len() - new_cursor.len();
                             *consumed += consumed_from_chunk;
-                            let _=write!(DBG, "New Consumed = {} new_cursor len: {} passed: {}\n", consumed, new_cursor.len(), passed_cursor.len());
                             self.1(&mut state.1, &cursor[0..passed_cursor.len()-new_cursor.len()]);
                             if *consumed == len {
-                                let _=write!(DBG, "FINISHED LENGTHED\n cft: {} remining: {:?}\n", consumed_from_chunk, &cursor[consumed_from_chunk..]);
 
                                 Ok(((Ok(ret), state.1.clone()), &cursor[consumed_from_chunk..]))
                             } else {
@@ -337,7 +332,6 @@ impl<N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> InterpParser
                         Err((None, new_cursor)) => {
                             let consumed_from_chunk = passed_cursor.len() - new_cursor.len();
                             *consumed += consumed_from_chunk;
-                            let _=write!(DBG, "New Consumed = {} new_cursor len: {} passed: {}\n", consumed, new_cursor.len(), passed_cursor.len());
                             self.1(&mut state.1, &cursor[0..passed_cursor.len()-new_cursor.len()]);
                             if *consumed == len {
                                 Ok(((Err(()), state.1.clone()), &cursor[consumed_from_chunk..]))
@@ -503,8 +497,6 @@ fn test_array() {
 
 #[test]
     fn test_darray() {
-        use core::mem::size_of;
-        write!(DBG, "DArray test state size: {}\n", size_of::<<SubInterp<DefaultInterp> as InterpParser<DArray<Byte,Byte,5>>>::State>()).ok();
         parser_test_feed::<DArray<Byte,Byte,5>, _, _>(SubInterp(DefaultInterp), &[b"\0"], &b""[..], &[]);
         parser_test_feed::<DArray<Byte,Byte,5>, _, _>(SubInterp(DefaultInterp), &[b"\x05abcde"], &b"abcde"[..], &[]);
         parser_test_feed::<DArray<Byte,Byte,5>, _, _>(SubInterp(Action(DefaultInterp, |_: &u8| Some(()))), &[b"\x05abcde"], &[(),(),(),(),()][..], &[]);

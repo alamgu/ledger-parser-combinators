@@ -53,4 +53,5 @@ pub mod endianness;
 
 pub mod interp_parser;
 
+pub mod json;
 pub mod json_interp;
