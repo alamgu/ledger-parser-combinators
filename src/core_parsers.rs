@@ -68,3 +68,6 @@ impl<I : RV, O, A, F: Fn(&I::R) -> (O, Option<A>)> RV for Action<I, O, A, F> {
 
 //pub struct DArray<I, N>;
 //pub struct Table;
+
+pub struct LengthFallback<N, S>(pub N, pub S);
+

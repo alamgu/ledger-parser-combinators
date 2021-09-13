@@ -245,16 +245,19 @@ impl<A : InterpParser<C>, B : InterpParser<D>, C, D> InterpParser<(C, D)> for (A
         PairState::First(<A as InterpParser<C>>::init(&self.0))
     }
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8]) -> RX<'a, Self::Returning> {
-        match state {
-            PairState::First(ref mut sub) => match <A as InterpParser<C> >::parse(&self.0, sub, chunk)? {
-                (ret, new_chunk) => {
-                    *state = PairState::Second(ret.clone(), <B as InterpParser<D>>::init(&self.1));
-                    Err((None, new_chunk))
+        let mut cursor = chunk;
+        loop {
+            match state {
+                PairState::First(ref mut sub) => match <A as InterpParser<C> >::parse(&self.0, sub, cursor)? {
+                    (ret, new_chunk) => {
+                        *state = PairState::Second(ret.clone(), <B as InterpParser<D>>::init(&self.1));
+                        cursor = new_chunk;
+                    }
                 }
-            }
-            PairState::Second(a_ret, ref mut sub) => match <B as InterpParser<D> >::parse(&self.1, sub, chunk)? {
-                (b_ret, new_chunk) => {
-                    Ok(((a_ret.clone(), b_ret), new_chunk))
+                PairState::Second(a_ret, ref mut sub) => match <B as InterpParser<D> >::parse(&self.1, sub, cursor)? {
+                    (b_ret, new_chunk) => {
+                        break Ok(((a_ret.clone(), b_ret), new_chunk));
+                    }
                 }
             }
         }
@@ -280,6 +283,106 @@ macro_rules! def_table {
     }
 }
 */
+
+pub enum LengthFallbackParserState<N, IS> {
+    Length(N),
+    Element(usize, usize, IS),
+    Failed(usize, usize),
+    Done
+}
+
+pub struct ObserveLengthedBytes<X, F, S>(pub fn() -> X, pub F, pub S);
+
+impl<N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> InterpParser<LengthFallback<N, I>> for ObserveLengthedBytes<X, F, S> where
+    DefaultInterp : InterpParser<N>,
+    usize: TryFrom<<DefaultInterp as InterpParser<N>>::Returning> {
+    type State=(LengthFallbackParserState<<DefaultInterp as InterpParser<N>>::State, <S as InterpParser<I>>::State>, X);
+    type Returning = (Result<<S as InterpParser<I>>::Returning, ()>, X);
+    fn init(&self) -> Self::State {
+        (LengthFallbackParserState::Length(<DefaultInterp as InterpParser<N>>::init(&DefaultInterp)), self.0())
+    }
+    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8]) -> RX<'a, Self::Returning> {
+        use LengthFallbackParserState::*;
+        let mut cursor : &'a [u8] = chunk;
+        loop {
+            break match state.0 {
+                Length(ref mut nstate) => {
+                    let (len_temp, newcur) : (_, &'a [u8]) = <DefaultInterp as InterpParser<N>>::parse(&DefaultInterp, nstate, cursor)?;
+                    cursor = newcur;
+                    let len = <usize as TryFrom<<DefaultInterp as InterpParser<N>>::Returning>>::try_from(len_temp).or(Err((Some(OOB::Reject), newcur)))?;
+                    let _=write!(DBG, "Parsed length: {}\n", len);
+                    state.0 = Element(0, len, <S as InterpParser<I>>::init(&self.2));
+                    continue;
+                }
+                Element(ref mut consumed, len, ref mut istate) => {
+                    let _=write!(DBG, "Parsing a chunk: conusmed = {} chunkLen = {} len = {}\n", consumed, cursor.len(), len);
+                    let passed_cursor = &cursor[0..core::cmp::min(cursor.len(), (len)-(*consumed))];
+                    let _=write!(DBG, "PASSED CURSOR\n------{:?}\n------\n", passed_cursor);
+                    match self.2.parse(istate, passed_cursor) {
+                        Ok((ret, new_cursor)) => {
+                            let consumed_from_chunk = passed_cursor.len() - new_cursor.len();
+                            *consumed += consumed_from_chunk;
+                            let _=write!(DBG, "New Consumed = {} new_cursor len: {} passed: {}\n", consumed, new_cursor.len(), passed_cursor.len());
+                            self.1(&mut state.1, &cursor[0..passed_cursor.len()-new_cursor.len()]);
+                            if *consumed == len {
+                                let _=write!(DBG, "FINISHED LENGTHED\n cft: {} remining: {:?}\n", consumed_from_chunk, &cursor[consumed_from_chunk..]);
+
+                                Ok(((Ok(ret), state.1.clone()), &cursor[consumed_from_chunk..]))
+                            } else {
+                                cursor = new_cursor;
+                                state.0 = Failed(*consumed, len);
+                                continue;
+                            }
+                        }
+                        Err((None, new_cursor)) => {
+                            let consumed_from_chunk = passed_cursor.len() - new_cursor.len();
+                            *consumed += consumed_from_chunk;
+                            let _=write!(DBG, "New Consumed = {} new_cursor len: {} passed: {}\n", consumed, new_cursor.len(), passed_cursor.len());
+                            self.1(&mut state.1, &cursor[0..passed_cursor.len()-new_cursor.len()]);
+                            if *consumed == len {
+                                Ok(((Err(()), state.1.clone()), &cursor[consumed_from_chunk..]))
+                            } else {
+                                Err((None, &cursor[consumed_from_chunk..]))
+                            }
+                        }
+                        Err((Some(OOB::Reject), _)) => {
+                            state.0 = Failed(*consumed, len);
+                            continue;
+                        }
+                    }
+                }
+                Failed(ref mut consumed, len) => {
+                    use core::cmp::min;
+                    let new_cursor = &cursor[min((len) - (*consumed), cursor.len())..];
+                    self.1(&mut state.1, &cursor[0..cursor.len()-new_cursor.len()]);
+                    if cursor.len() >= ((len) - (*consumed)) {
+                        state.0 = Done;
+                        Ok(((Err(()), state.1.clone()), new_cursor))
+                    } else {
+                        state.0 = Failed(*consumed-cursor.len(), len);
+                        Err((None, new_cursor))
+                    }
+                }
+                Done => { Err((Some(OOB::Reject), cursor)) }
+            }
+        }
+    }
+}
+
+    struct DBG;
+    use core;
+    #[allow(unused_imports)]
+    use core::fmt::Write;
+    impl core::fmt::Write for DBG {
+        fn write_str(&mut self, s: &str) -> core::fmt::Result {
+            use arrayvec::ArrayString;
+            let mut qq = ArrayString::<128>::new();
+            qq.push_str(s);
+            #[cfg(target_os="nanos")]
+            nanos_sdk::debug_print(qq.as_str());
+            Ok(())
+        }
+    }
 
 #[cfg(test)]
 mod test {
@@ -313,7 +416,7 @@ mod test {
     use crate::core_parsers::{Byte, Array, DArray, U16, U32 };
     #[allow(unused_imports)]
     use arrayvec::ArrayVec;
-    
+
     fn parser_test_feed<P, T: InterpParser<P>, RT: Debug + ?Sized>(parser: T, chunks: &[&[u8]], result: &RT, oobs: &[OOB]) where T::Returning: PartialEq<RT> + Debug
     {
         let mut oob_iter = oobs.iter();
@@ -378,6 +481,18 @@ fn interp_byte_parser() {
     let p = super::Action(DefaultInterp, |x: &u8| Some(x.clone()));
     let mut state = init_parser::<Byte,_>(&p);
     assert_eq!(run_parser::<Byte,_>(&p, &mut state, b"cheez"), Ok((b'c', &b"heez"[..])));
+}
+
+#[test]
+fn test_length_fallback() {
+    type Format = super::LengthFallback<Byte, Array<Byte, 5>>;
+    parser_test_feed::<Format, _, _>(super::ObserveLengthedBytes(|| { ArrayVec::<u8, 5>::new() }, |a: &mut ArrayVec<u8, 5> , b: &[u8]| { let _ = a.try_extend_from_slice(b); }, DefaultInterp), &[b"\x05fooba"], &(Ok(*(b"fooba")), (*(b"fooba")).into()), &[]);
+    use crate::endianness::{Endianness};
+    type Format2 = super::LengthFallback<U32< { Endianness::Little } >, Array<Byte, 5>>;
+    parser_test_feed::<Format2, _, _>(super::ObserveLengthedBytes(|| { ArrayVec::<u8, 5>::new() }, |a: &mut ArrayVec<u8, 5> , b: &[u8]| { let _ = a.try_extend_from_slice(b); }, DefaultInterp), &[b"\x05\x00\x00\x00fooba"], &(Ok(*(b"fooba")), (*(b"fooba")).into()), &[]);
+    parser_test_feed::<Format2, _, _>(super::ObserveLengthedBytes(|| { ArrayVec::<u8, 6>::new() }, |a: &mut ArrayVec<u8, 6> , b: &[u8]| { let _ = a.try_extend_from_slice(b); }, DefaultInterp), &[b"\x06\x00\x00\x00foobar"], &(Err(()), (*(b"foobar")).into()), &[]);
+    parser_test_feed::<Format2, _, _>(super::ObserveLengthedBytes(|| { ArrayVec::<u8, 7>::new() }, |a: &mut ArrayVec<u8, 7> , b: &[u8]| { let _ = a.try_extend_from_slice(b); }, DefaultInterp), &[b"\x07\x00\x00\x00foobarb"], &(Err(()), (*(b"foobarb")).into()), &[]);
+    parser_test_feed::<Format2, _, _>(super::ObserveLengthedBytes(|| { ArrayVec::<u8, 4>::new() }, |a: &mut ArrayVec<u8, 4> , b: &[u8]| { let _ = a.try_extend_from_slice(b); }, DefaultInterp), &[b"\x04\x00\x00\x00foob"], &(Err(()), (*(b"foob")).into()), &[]);
 }
 
 #[test]
