@@ -353,7 +353,7 @@ impl<N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> InterpParser
                         state.0 = Done;
                         Ok(((Err(()), state.1.clone()), new_cursor))
                     } else {
-                        state.0 = Failed(*consumed-cursor.len(), len);
+                        state.0 = Failed(*consumed + cursor.len(), len);
                         Err((None, new_cursor))
                     }
                 }
