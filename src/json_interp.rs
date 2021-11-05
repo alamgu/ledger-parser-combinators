@@ -674,29 +674,29 @@ fn test_json_string_enum() {
 macro_rules! define_json_struct_interp {
     { $name:ident $n:literal { $($field:ident : $schemaType:ty),* } } => {
         $crate::json::paste! {
-            pub struct [<$name State>]<$([<$field:camel>]),* , $([<$field:camel Result>]),*> {
-                state : [<$name StateEnum>]<$([<$field:camel>]),*>,
-                results : $name<$([<$field:camel Result>]),*>
+            pub struct [<$name State>]<$([<Field_ $field:camel>]),* , $([<Field_ $field:camel Result>]),*> {
+                state : [<$name StateEnum>]<$([<Field_ $field:camel>]),*>,
+                results : $name<$([<Field_ $field:camel Result>]),*>
             }
 
-            pub enum [<$name StateEnum>]<$([<$field:camel>]),*> {
+            pub enum [<$name StateEnum>]<$([<Field_ $field:camel>]),*> {
                 Start,
                 Key(<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::State),
                 KeySep(<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::Returning),
                 ValueSep,
                 End,
-                $([<$field:camel>]([<$field:camel>])),*
+                $([<Field_ $field:camel>]([<Field_ $field:camel>])),*
             }
 
             //impl<A, AA : JsonInterp<A>, B, BB : JsonInterp<B>, C, CC : JsonInterp<C>> JsonInterp<SomeStruct<A,B,C>> for SomeStruct<AA, BB, CC>
 
-            impl<$([<$field:camel>], [<$field:camel Interp>] : JsonInterp<[<$field:camel>]>),*> JsonInterp<$name<$([<$field:camel>]),*>> for $name<$([<$field:camel Interp>]),*> {
+            impl<$([<Field_ $field:camel>], [<Field_ $field:camel Interp>] : JsonInterp<[<Field_ $field:camel>]>),*> JsonInterp<$name<$([<Field_ $field:camel>]),*>> for $name<$([<Field_ $field:camel Interp>]),*> {
                 type State = [<$name State>]<
-                    $(<[<$field:camel Interp>] as JsonInterp<[<$field:camel>]>>::State),* ,
-                    $(Option<<[<$field:camel Interp>] as JsonInterp<[<$field:camel>]>>::Returning>),*
+                    $(<[<Field_ $field:camel Interp>] as JsonInterp<[<Field_ $field:camel>]>>::State),* ,
+                    $(Option<<[<Field_ $field:camel Interp>] as JsonInterp<[<Field_ $field:camel>]>>::Returning>),*
                     >;
                 type Returning = $name <
-                    $(Option<<[<$field:camel Interp>] as JsonInterp<[<$field:camel>]>>::Returning>),*
+                    $(Option<<[<Field_ $field:camel Interp>] as JsonInterp<[<Field_ $field:camel>]>>::Returning>),*
                     >;
                 fn init(&self) -> Self::State { Self::State { state: [<$name StateEnum>]::Start, results: Default::default() } }
                 fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>) -> Result<Self::Returning, Option<$crate::interp_parser::OOB>> {
@@ -714,7 +714,7 @@ macro_rules! define_json_struct_interp {
                                 $(
                                     $crate::json_interp::bstringify!($field) => {
                                         write!(DBG, "json-struct-interp parser: checking key {:?}\n", core::str::from_utf8(key));
-                                        [<$name StateEnum>]::[<$field:camel>](<[<$field:camel Interp>] as JsonInterp<[<$field:camel>]>>::init(&self.[<$field:snake>]))
+                                        [<$name StateEnum>]::[<Field_ $field:camel>](<[<Field_ $field:camel Interp>] as JsonInterp<[<Field_ $field:camel>]>>::init(&self.[<field_ $field:snake>]))
                                     }
                                 )*
                                 ,
@@ -724,9 +724,9 @@ macro_rules! define_json_struct_interp {
                             }
                         }
                         $(
-                        ([<$name StateEnum>]::[<$field:camel>](ref mut sub), token) => {
-                            full_state.results.[<$field:snake>] = Some(
-                                <[<$field:camel Interp>] as JsonInterp<[<$field:camel>]>>::parse(&self.[<$field:snake>], sub, token)?);
+                        ([<$name StateEnum>]::[<Field_ $field:camel>](ref mut sub), token) => {
+                            full_state.results.[<field_ $field:snake>] = Some(
+                                <[<Field_ $field:camel Interp>] as JsonInterp<[<Field_ $field:camel>]>>::parse(&self.[<field_ $field:snake>], sub, token)?);
                             [<$name StateEnum>]::ValueSep
                         })*
 
@@ -747,15 +747,15 @@ macro_rules! define_json_struct_interp {
 
 
             type [<$name DropInterp>] = $name<$(define_json_struct_interp!{ DROP $field DropInterp } ),*>;
-            const [<$name:upper _DROP_INTERP>] : [<$name DropInterp>] = [<$name DropInterp>] { $( [<$field:snake>]: DropInterp ),* };
-            impl<$([<$field:camel>]),*> JsonInterp<$name<$([<$field:camel>]),*> > for DropInterp where
-                $( DropInterp : JsonInterp<[<$field:camel>]> ),*
+            const [<$name:upper _DROP_INTERP>] : [<$name DropInterp>] = [<$name DropInterp>] { $( [<field_ $field:snake>]: DropInterp ),* };
+            impl<$([<Field_ $field:camel>]),*> JsonInterp<$name<$([<Field_ $field:camel>]),*> > for DropInterp where
+                $( DropInterp : JsonInterp<[<Field_ $field:camel>]> ),*
                 {
-                    type State = < [<$name DropInterp>] as JsonInterp<$name<$([<$field:camel>]),*> >>::State;
+                    type State = < [<$name DropInterp>] as JsonInterp<$name<$([<Field_ $field:camel>]),*> >>::State;
                     type Returning = ();
-                    fn init(&self) -> Self::State { <[<$name DropInterp>] as JsonInterp<$name<$([<$field:camel>]),*> >>::init(&[<$name:upper _DROP_INTERP>]) }
+                    fn init(&self) -> Self::State { <[<$name DropInterp>] as JsonInterp<$name<$([<Field_ $field:camel>]),*> >>::init(&[<$name:upper _DROP_INTERP>]) }
                     fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>) -> Result<Self::Returning, Option<$crate::interp_parser::OOB>> {
-                        <[<$name DropInterp>] as JsonInterp<$name<$([<$field:camel>]),*> >>::parse(&[<$name:upper _DROP_INTERP>], full_state, token).map(|_| { () })
+                        <[<$name DropInterp>] as JsonInterp<$name<$([<Field_ $field:camel>]),*> >>::parse(&[<$name:upper _DROP_INTERP>], full_state, token).map(|_| { () })
                 }
             }
         }

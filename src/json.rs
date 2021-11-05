@@ -22,8 +22,8 @@ macro_rules! define_json_struct {
 
         $crate::json::paste! {
 #[derive(Default, Debug, PartialEq, Clone)]
-            pub struct $name<$([<$field:camel>]),*> {
-                $(pub [<$field:snake>] : [<$field:camel>] ),*
+            pub struct $name<$([<Field_ $field:camel>]),*> {
+                $(pub [<field_ $field:snake>] : [<Field_ $field:camel>] ),*
             }
 
             pub type [<$name Schema>] = $name<$($schemaType),*>;
