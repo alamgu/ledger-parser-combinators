@@ -709,7 +709,7 @@ macro_rules! define_json_struct_interp {
                             [<$name StateEnum>]::KeySep(<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::parse(&JsonStringAccumulate, key_state, token)?)
                         }
 
-                        ([<$name StateEnum>]::KeySep(key), JsonToken::NameSeparator) => {
+                        ([<$name StateEnum>]::KeySep(ref key), JsonToken::NameSeparator) => {
                             match &key[..] {
                                 $(
                                     $crate::json_interp::bstringify!($field) => {
