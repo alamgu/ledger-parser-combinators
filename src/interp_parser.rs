@@ -346,6 +346,8 @@ impl<N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> InterpParser
                     }
                 }
                 Failed(ref mut consumed, len) => {
+                    return Err((Some(OOB::Reject), cursor));
+                    write!(DBG, "We hit a failed state in the parser\n");
                     use core::cmp::min;
                     let new_cursor = &cursor[min((len) - (*consumed), cursor.len())..];
                     self.1(&mut state.1, &cursor[0..cursor.len()-new_cursor.len()]);

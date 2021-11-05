@@ -712,11 +712,15 @@ macro_rules! define_json_struct_interp {
                         ([<$name StateEnum>]::KeySep(key), JsonToken::NameSeparator) => {
                             match &key[..] {
                                 $(
-                                    $crate::json_interp::bstringify!($field) => [<$name StateEnum>]::[<$field:camel>](
-                                        <[<$field:camel Interp>] as JsonInterp<[<$field:camel>]>>::init(&self.[<$field:snake>]))
-                                ),*
+                                    $crate::json_interp::bstringify!($field) => {
+                                        write!(DBG, "json-struct-interp parser: checking key {:?}\n", core::str::from_utf8(key));
+                                        [<$name StateEnum>]::[<$field:camel>](<[<$field:camel Interp>] as JsonInterp<[<$field:camel>]>>::init(&self.[<$field:snake>]))
+                                    }
+                                )*
                                 ,
-                                _ => return Err(Some($crate::interp_parser::OOB::Reject)),
+                                _ => {
+                                    write!(DBG, "json-struct-interp parser: Got unexpected key {:?}\n", core::str::from_utf8(key));
+                                    return Err(Some($crate::interp_parser::OOB::Reject)) }
                             }
                         }
                         $(
