@@ -35,7 +35,7 @@ pub trait JsonInterp<S> {
     type State;
     type Returning;
     fn init(&self) -> Self::State;
-    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>) -> Result<Self::Returning, Option<OOB>>;
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>>;
 }
 
 #[derive(Debug)]
@@ -210,8 +210,8 @@ impl<T, S : JsonInterp<T>> InterpParser<Json<T>> for Json<S> {
             let tok_r = get_json_token(&mut state.0, cursor);
             let (token, new_cursor) = tok_r?;
 
-            break match <S as JsonInterp<T>>::parse(&self.0, &mut state.1, token) {
-                Ok(rv) => { Ok(new_cursor) }
+            break match <S as JsonInterp<T>>::parse(&self.0, &mut state.1, token, destination) {
+                Ok(()) => { Ok(new_cursor) }
                 Err(None) => { cursor = new_cursor; continue; }
                 Err(Some(a)) => { Err((Some(a), new_cursor)) }
             }
@@ -244,7 +244,7 @@ impl JsonInterp<JsonAny> for DropInterp {
     type State = DropInterpJsonState;
     type Returning = ();
     fn init(&self) -> Self::State { DropInterpJsonState { stack: ArrayVec::new(), state: DropInterpStateEnum::Start, seen_item: false } }
-    fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>) -> Result<Self::Returning, Option<OOB>> {
+    fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         let DropInterpJsonState { ref mut stack, ref mut state, ref mut seen_item } = full_state;
         *state = match (stack.last(), &state, token) {
 
@@ -347,7 +347,7 @@ impl JsonInterp<JsonAny> for DropInterp {
             _ => { return Err(Some(OOB::Reject)) } // Invalid json structure.
         };
         match (stack.is_empty(), state) {
-            (true, DropInterpStateEnum::AfterValue) => { Ok(()) }
+            (true, DropInterpStateEnum::AfterValue) => { *destination=Some(()); Ok(()) }
             _ => { Err(None) }
         }
     }
@@ -440,9 +440,9 @@ impl JsonInterp<JsonBool> for DropInterp {
     type State = ();
     type Returning = ();
     fn init(&self) -> Self::State { () }
-    fn parse<'a>(&self, _state: &mut Self::State, token: JsonToken<'a>) -> Result<Self::Returning, Option<OOB>> {
+    fn parse<'a>(&self, _state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         match token {
-            JsonToken::True | JsonToken::False => { Ok(()) }
+            JsonToken::True | JsonToken::False => { *destination=Some(()); Ok(()) }
             _ => { Err(Some(OOB::Reject)) }
         }
     }
@@ -452,7 +452,7 @@ impl JsonInterp<JsonString> for DropInterp {
     type State = DropInterpJsonState;
     type Returning = ();
     fn init(&self) -> Self::State { DropInterpJsonState { stack: ArrayVec::new(), state: DropInterpStateEnum::Start, seen_item: false } }
-    fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>) -> Result<Self::Returning, Option<OOB>> {
+    fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         let DropInterpJsonState { ref mut stack, ref mut state, seen_item : _ } = full_state;
         *state = match (stack.last(), &state, token) {
 
@@ -473,7 +473,7 @@ impl JsonInterp<JsonString> for DropInterp {
             _ => { return Err(Some(OOB::Reject)) } // Invalid json structure.
         };
         match (stack.is_empty(), state) {
-            (true, DropInterpStateEnum::AfterValue) => { Ok(()) }
+            (true, DropInterpStateEnum::AfterValue) => { *destination=Some(()); Ok(()) }
             _ => { Err(None) }
         }
     }
@@ -493,7 +493,7 @@ impl JsonInterp<JsonNumber> for DropInterp {
     type State = DropInterpJsonState;
     type Returning = ();
     fn init(&self) -> Self::State { DropInterpJsonState { stack: ArrayVec::new(), state: DropInterpStateEnum::Start, seen_item: false } }
-    fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>) -> Result<Self::Returning, Option<OOB>> {
+    fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         let DropInterpJsonState { ref mut stack, ref mut state, seen_item : _ } = full_state;
         *state = match (stack.last(), &state, token) {
 
@@ -514,38 +514,38 @@ impl JsonInterp<JsonNumber> for DropInterp {
             _ => { return Err(Some(OOB::Reject)) } // Invalid json structure.
         };
         match (stack.is_empty(), state) {
-            (true, DropInterpStateEnum::AfterValue) => { Ok(()) }
+            (true, DropInterpStateEnum::AfterValue) => { *destination = Some(()); Ok(()) }
             _ => { Err(None) }
         }
     }
 }
 
-pub enum JsonArrayDropState<S> {
+pub enum JsonArrayDropState<S, D> {
     Start,
     First,
-    Item(S),
+    Item(S, Option<D>),
     AfterValue
 }
 
 impl<T> JsonInterp<JsonArray<T>> for DropInterp where DropInterp: JsonInterp<T> {
-    type State = JsonArrayDropState<<DropInterp as JsonInterp<T>>::State>;
+    type State = JsonArrayDropState<<DropInterp as JsonInterp<T>>::State, <DropInterp as JsonInterp<T>>::Returning>;
     type Returning = ();
     fn init(&self) -> Self::State { JsonArrayDropState::Start }
-    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>) -> Result<Self::Returning, Option<OOB>> {
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         use JsonArrayDropState::*;
         use JsonToken::*;
         let st = (state, token);
         loop {
             *st.0 = match st {
                 (Start, BeginArray) => { First }
-                (First, EndArray) => { return Ok(()) }
+                (First, EndArray) => { *destination=Some(()); return Ok(()) }
                 (First, _) => {
-                    *st.0 = Item(<DropInterp as JsonInterp<T>>::init(&DropInterp));
+                    *st.0 = Item(<DropInterp as JsonInterp<T>>::init(&DropInterp), None);
                     continue;
                 }
-                (Item(ref mut s), tok) => { <DropInterp as JsonInterp<T>>::parse(&DropInterp, s, tok)?; AfterValue }
-                (AfterValue, ValueSeparator) => { Item(<DropInterp as JsonInterp<T>>::init(&DropInterp)) }
-                (AfterValue, EndArray) => { return Ok(()) }
+                (Item(ref mut s, ref mut sub_destination), tok) => { <DropInterp as JsonInterp<T>>::parse(&DropInterp, s, tok, sub_destination)?; AfterValue }
+                (AfterValue, ValueSeparator) => { Item(<DropInterp as JsonInterp<T>>::init(&DropInterp), None) }
+                (AfterValue, EndArray) => { *destination=Some(()); return Ok(()) }
                 _ => { return Err(Some(OOB::Reject)) }
             };
             return Err(None)
@@ -553,24 +553,25 @@ impl<T> JsonInterp<JsonArray<T>> for DropInterp where DropInterp: JsonInterp<T> 
     }
 }
 
+/* Important: DROPS it's results */
 impl<T, S: JsonInterp<T>> JsonInterp<JsonArray<T>> for SubInterp<S> {
-    type State = JsonArrayDropState<<S as JsonInterp<T>>::State>;
+    type State = JsonArrayDropState<<S as JsonInterp<T>>::State, <S as JsonInterp<T>>::Returning>;
     type Returning = ();
     fn init(&self) -> Self::State { JsonArrayDropState::Start }
-    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>) -> Result<Self::Returning, Option<OOB>> {
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         use JsonArrayDropState::*;
         use JsonToken::*;
         let st = (state, token);
         loop {
             *st.0 = match st {
                 (Start, BeginArray) => { First }
-                (First, EndArray) => { return Ok(()) }
+                (First, EndArray) => { *destination=Some(()); return Ok(()) }
                 (First, _) => {
-                    *st.0 = Item(<S as JsonInterp<T>>::init(&self.0));
+                    *st.0 = Item(<S as JsonInterp<T>>::init(&self.0), None);
                     continue;
                 }
-                (Item(ref mut s), tok) => { <S as JsonInterp<T>>::parse(&self.0, s, tok)?; AfterValue }
-                (AfterValue, ValueSeparator) => { Item(<S as JsonInterp<T>>::init(&self.0)) }
+                (Item(ref mut s, ref mut sub_destination), tok) => { <S as JsonInterp<T>>::parse(&self.0, s, tok, sub_destination)?; AfterValue }
+                (AfterValue, ValueSeparator) => { Item(<S as JsonInterp<T>>::init(&self.0), None) }
                 (AfterValue, EndArray) => { return Ok(()) }
                 _ => { return Err(Some(OOB::Reject)) }
             };
@@ -579,18 +580,18 @@ impl<T, S: JsonInterp<T>> JsonInterp<JsonArray<T>> for SubInterp<S> {
     }
 }
 
-impl<A, R, F: Fn(&<S as JsonInterp<A>>::Returning) -> Option<R>, S : JsonInterp<A>> JsonInterp<A> for Action<S, F> {
-    type State = <S as JsonInterp<A> >::State;
+impl<A, R, S : JsonInterp<A>> JsonInterp<A> for Action<S, fn(&<S as JsonInterp<A>>::Returning, &mut Option<R>) -> Option<()>> {
+    type State = (<S as JsonInterp<A> >::State, Option<<S as JsonInterp<A>>::Returning>);
     type Returning = R;
     fn init(&self) -> Self::State {
-        <S as JsonInterp<A>>::init(&self.0)
+        (<S as JsonInterp<A>>::init(&self.0), None)
     }
 
-    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>) -> Result<Self::Returning, Option<OOB>> {
-        let ret = self.0.parse(state, token)?;
-        match (self.1)(&ret) {
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        self.0.parse(&mut state.0, token, &mut state.1)?;
+        match (self.1)(state.1.as_ref().ok_or(Some(OOB::Reject))?, destination) {
             None => { Err(Some(OOB::Reject)) }
-            Some(rv) => { Ok(rv) }
+            Some(()) => { Ok(()) }
         }
     }
 }
@@ -599,28 +600,27 @@ pub struct JsonStringAccumulate<const N : usize>;
 
 pub enum JsonStringAccumulateState<const N : usize> {
     Start,
-    Accumulating(ArrayVec<u8, N>),
+    Accumulating,
     End
 }
 impl<const N : usize> JsonInterp<JsonString> for JsonStringAccumulate<N> {
     type State = JsonStringAccumulateState<N>;
     type Returning = ArrayVec<u8,N>;
     fn init(&self) -> Self::State { JsonStringAccumulateState::Start }
-    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>) -> Result<Self::Returning, Option<OOB>> {
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         match (state, token) {
             (state@JsonStringAccumulateState::Start, JsonToken::BeginString) => {
-                *state = JsonStringAccumulateState::Accumulating(ArrayVec::new());
+                *destination=Some(ArrayVec::new());
+                *state = JsonStringAccumulateState::Accumulating;
                 Err(None)
             }
-            (state@JsonStringAccumulateState::Accumulating(_), JsonToken::StringChunk(c)) => {
-                let buffer = &mut (match state { JsonStringAccumulateState::Accumulating(ref mut a) => a, _ => panic!("impossible"), });
-                buffer.try_extend_from_slice(c).map_err(|_| Some(OOB::Reject))?;
+            (JsonStringAccumulateState::Accumulating, JsonToken::StringChunk(c)) => {
+                destination.as_mut().ok_or(Some(OOB::Reject))?.try_extend_from_slice(c).map_err(|_| Some(OOB::Reject))?;
                 Err(None)
             }
-            (state@JsonStringAccumulateState::Accumulating(_), JsonToken::EndString) => {
-                let rv = match state { JsonStringAccumulateState::Accumulating(buffer) => buffer.clone(), _ => panic!("Impossible"), };
+            (state@JsonStringAccumulateState::Accumulating, JsonToken::EndString) => {
                 *state = JsonStringAccumulateState::End;
-                Ok(rv)
+                Ok(())
             }
             _ => {
                 Err(Some(OOB::Reject))
@@ -636,11 +636,14 @@ fn test_json_string_accum() {
     test_json_interp_parser::<Json<JsonStringAccumulate<10>>, Json<JsonString> >(&Json(JsonStringAccumulate), b"\"foo\nbar\"", Ok(((&b"foo\nbar"[..]).try_into().unwrap(), b"")));
 }
 
+/*
+// Not currently used, questionable usefulness.
+//
 impl<const MAX : usize, const STRS : &'static StringList> JsonInterp<JsonStringEnum<MAX, STRS>> for DefaultInterp {
     type State = <JsonStringAccumulate<MAX> as JsonInterp<JsonString>>::State;
     type Returning = usize;
     fn init(&self) -> Self::State { <JsonStringAccumulate<MAX> as JsonInterp<JsonString>>::init(&JsonStringAccumulate) }
-    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>) -> Result<Self::Returning, Option<OOB>> {
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         let a = <JsonStringAccumulate<MAX> as JsonInterp<JsonString>>::parse(&JsonStringAccumulate, state, token)?;
         let mut cursor = STRS;
         let mut n = 0;
@@ -669,6 +672,7 @@ fn test_json_string_enum() {
     test_json_interp_parser::<Json<DefaultInterp>, Json<TestEnum> >(&Json(DefaultInterp), b"\"one\"", Ok((0, b"")));
     test_json_interp_parser::<Json<DefaultInterp>, Json<TestEnum> >(&Json(DefaultInterp), b"\"two\"", Err((Some(OOB::Reject), b"")));
 }
+*/
 
 #[macro_export]
 macro_rules! define_json_struct_interp {
@@ -699,7 +703,7 @@ macro_rules! define_json_struct_interp {
                     $(Option<<[<Field_ $field:camel Interp>] as JsonInterp<[<Field_ $field:camel>]>>::Returning>),*
                     >;
                 fn init(&self) -> Self::State { Self::State { state: [<$name StateEnum>]::Start, results: Default::default() } }
-                fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>) -> Result<Self::Returning, Option<$crate::interp_parser::OOB>> {
+                fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<$crate::interp_parser::OOB>> {
                     full_state.state = match (&mut full_state.state, token) {
                         // Object handling
                         ([<$name StateEnum>]::Start, JsonToken::BeginObject) => {
@@ -754,7 +758,7 @@ macro_rules! define_json_struct_interp {
                     type State = < [<$name DropInterp>] as JsonInterp<$name<$([<Field_ $field:camel>]),*> >>::State;
                     type Returning = ();
                     fn init(&self) -> Self::State { <[<$name DropInterp>] as JsonInterp<$name<$([<Field_ $field:camel>]),*> >>::init(&[<$name:upper _DROP_INTERP>]) }
-                    fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>) -> Result<Self::Returning, Option<$crate::interp_parser::OOB>> {
+                    fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<$crate::interp_parser::OOB>> {
                         <[<$name DropInterp>] as JsonInterp<$name<$([<Field_ $field:camel>]),*> >>::parse(&[<$name:upper _DROP_INTERP>], full_state, token).map(|_| { () })
                 }
             }
@@ -811,7 +815,7 @@ impl JsonInterp<JsonStringEnum<STRS>> for DefaultInterp {
     type State = DropInterpJsonState;
     type Returning = u8;
     fn init(&self) -> Self::State { DropInterpJsonState { stack: ArrayVec::new(), state: DropInterpStateEnum::Start, seen_item: false } }
-    fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>) -> Result<Self::Returning, Option<OOB>> {
+    fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         let DropInterpJsonState { ref mut stack, ref mut state, ref mut seen_item } = full_state;
         *state = match (stack.last(), &state, token) {
 

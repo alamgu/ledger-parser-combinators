@@ -220,7 +220,7 @@ impl< N, I, const M : usize> InterpParser<DArray<N, I, M>> for DefaultInterp whe
 
 pub struct Action<S, F>(pub S, pub F);
 
-impl<A, R, S : InterpParser<A>> InterpParser<A> for Action<S, fn(&<S as InterpParser<A>>::Returning, &Option<R>) -> Option<()>> 
+impl<A, R, S : InterpParser<A>> InterpParser<A> for Action<S, fn(&<S as InterpParser<A>>::Returning, &mut Option<R>) -> Option<()>> 
 {
     type State = (<S as InterpParser<A> >::State, Option<<S as InterpParser<A> >::Returning>);
     type Returning = R;
