@@ -56,7 +56,7 @@ pub enum JsonTokenizerState {
 }
 
 // JSON lexer
-fn get_json_token<'a>(state: &mut JsonTokenizerState, chunk: &'a [u8]) -> ParseResult<'a> {
+fn get_json_token<'a>(state: &mut JsonTokenizerState, chunk: &'a [u8]) -> Result<(JsonToken<'a>, RemainingSlice<'a>), (PResult<OOB>, RemainingSlice<'a>)> {
     let mut cursor = chunk;
     loop {
         match state {
@@ -211,7 +211,7 @@ impl<T, S : JsonInterp<T>> InterpParser<Json<T>> for Json<S> {
             let (token, new_cursor) = tok_r?;
 
             break match <S as JsonInterp<T>>::parse(&self.0, &mut state.1, token) {
-                Ok(rv) => { Ok((rv, new_cursor)) }
+                Ok(rv) => { Ok(new_cursor) }
                 Err(None) => { cursor = new_cursor; continue; }
                 Err(Some(a)) => { Err((Some(a), new_cursor)) }
             }
