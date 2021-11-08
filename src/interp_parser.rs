@@ -42,6 +42,7 @@ pub trait InterpParser<P> {
     type State;
     type Returning;
     fn init(&self) -> Self::State;
+    #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a>;
 }
 
@@ -55,10 +56,12 @@ pub struct DropInterp;
 
 pub struct ByteState;
 
+#[inline(never)]
 pub fn init_with_default<X: Default>(x: &mut Option<X>) {
     *x = Some(X::default());
 }
 
+#[inline(never)]
 pub fn set_from_thunk<X, F: Fn() -> X>(x: &mut X, f: F) {
     *x = f();
 }
@@ -67,6 +70,7 @@ impl InterpParser<Byte> for DefaultInterp {
     type State = ByteState;
     type Returning = u8;
     fn init(&self) -> Self::State { Self::State {} }
+    #[inline(never)]
     fn parse<'a, 'b>(&self, _state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
         match chunk.split_first() {
             None => Err((None, chunk)),
@@ -82,6 +86,7 @@ impl InterpParser<Byte> for DropInterp {
     type State = ();
     type Returning = ();
     fn init(&self) -> Self::State { () }
+    #[inline(never)]
     fn parse<'a, 'b>(&self, _state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
         match chunk.split_first() {
             None => Err((None, chunk)),
@@ -111,6 +116,7 @@ impl<I, S : InterpParser<I>, const N : usize> InterpParser<Array< I, N>> for Sub
                       subparser_destination: None,
                       subparser_state: <S as InterpParser<I>>::init(&self.0) }
     }
+    #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
         let mut remaining : &'a [u8] = chunk;
         while !state.buffer.is_full() {
@@ -140,6 +146,7 @@ macro_rules! number_parser {
             fn init(&self) -> Self::State {
                 <DefaultInterp as InterpParser<Array<Byte, $size>>>::init(&DefaultInterp)
             }
+            #[inline(never)]
             fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
                 let mut sub_destination : Option<[u8; $size]> = None;
                 let remainder = <DefaultInterp as InterpParser<Array<Byte, $size>>>::parse(&DefaultInterp, state, chunk, &mut sub_destination)?;
@@ -169,6 +176,7 @@ impl<N, I, S : InterpParser<I>, const M : usize> InterpParser<DArray<N, I, M> > 
     fn init(&self) -> Self::State {
         Self::State::Length(<DefaultInterp as InterpParser<N>>::init(&DefaultInterp))
     }
+    #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
         use ForwardDArrayParserState::*;
         let mut cursor : &'a [u8] = chunk;
@@ -205,6 +213,7 @@ impl< I, const N : usize >  InterpParser<Array<I, N>> for DefaultInterp where
     fn init(&self) -> Self::State {
         <SubInterp<DefaultInterp> as InterpParser<Array<I, N>>>::init(&SubInterp(DefaultInterp))
     }
+    #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
         <SubInterp<DefaultInterp> as InterpParser<Array<I, N>>>::parse(&SubInterp(DefaultInterp), state, chunk, destination)
     }
@@ -220,6 +229,7 @@ impl< N, I, const M : usize> InterpParser<DArray<N, I, M>> for DefaultInterp whe
     fn init(&self) -> Self::State {
         <SubInterp<DefaultInterp> as InterpParser<DArray<N, I, M>>>::init(&SubInterp(DefaultInterp))
     }
+    #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8]) -> ParseResult<'a> {
         <SubInterp<DefaultInterp> as InterpParser<DArray<N, I, M>>>::parse(&SubInterp(DefaultInterp), state, chunk)
     }
@@ -236,6 +246,7 @@ impl<A, R, S : InterpParser<A>> InterpParser<A> for Action<S, fn(&<S as InterpPa
         (<S as InterpParser<A>>::init(&self.0), None)
     }
 
+    #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
         let new_chunk = self.0.parse(&mut state.0, chunk, &mut state.1)?;
         match (self.1)(state.1.as_ref().ok_or((Some(OOB::Reject),new_chunk))?, destination) {
@@ -260,6 +271,7 @@ impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<
     fn init(&self) -> Self::State {
         None
     }
+    #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
         loop {
             break match state {
@@ -290,6 +302,7 @@ impl<A : InterpParser<C>, B : InterpParser<D>, C, D> InterpParser<(C, D)> for (A
     fn init(&self) -> Self::State {
         PairState::Init
     }
+    #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
         let mut cursor = chunk;
         loop {
@@ -338,7 +351,7 @@ pub enum LengthFallbackParserState<N, NO, IS> {
     Done
 }
 
-pub struct ObserveLengthedBytes<X, F, S>(pub fn() -> X, pub F, pub S);
+pub struct ObserveLengthedBytes<X, F, S>(pub fn() -> X, pub F, pub S, pub bool);
 
 impl<N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> InterpParser<LengthFallback<N, I>> for ObserveLengthedBytes<X, F, S> where
     DefaultInterp : InterpParser<N>,
@@ -349,6 +362,7 @@ impl<N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> InterpParser
     fn init(&self) -> Self::State {
         LengthFallbackParserState::Length(<DefaultInterp as InterpParser<N>>::init(&DefaultInterp), None)
     }
+    #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
         use LengthFallbackParserState::*;
         let mut cursor : &'a [u8] = chunk;
@@ -397,21 +411,25 @@ impl<N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> InterpParser
                         }
                     }
                 }
-                Failed(ref mut _consumed, _len) => {
-                    write!(DBG, "We hit a failed state in the parser\n").or(Err(rej(cursor)))?;
-                    return Err((Some(OOB::Reject), cursor));
-                    /*
-                    use core::cmp::min;
-                    let new_cursor = &cursor[min((len) - (*consumed), cursor.len())..];
-                    self.1(&mut state.1, &cursor[0..cursor.len()-new_cursor.len()]);
-                    if cursor.len() >= ((len) - (*consumed)) {
-                        state.0 = Done;
-                        Ok(((Err(()), state.1.clone()), new_cursor))
+                Failed(ref mut consumed, len) => {
+                    if self.3 {
+                        write!(DBG, "We hit a failed state in the parser\n").or(Err(rej(cursor)))?;
+                        return Err((Some(OOB::Reject), cursor));
                     } else {
-                        state.0 = Failed(*consumed + cursor.len(), len);
-                        Err((None, new_cursor))
+                        use core::cmp::min;
+                        let new_cursor = &cursor[min((*len) - (*consumed), cursor.len())..];
+                        self.1(&mut destination.as_mut().ok_or(rej(cursor))?.1, &cursor[0..cursor.len()-new_cursor.len()]);
+                        if cursor.len() >= ((*len) - (*consumed)) {
+                            set_from_thunk(state, || Done);
+                            set_from_thunk(&mut destination.as_mut().ok_or(rej(cursor))?.0, || None);
+                            Ok(new_cursor)
+                        } else {
+                            let new_consumed = *consumed + cursor.len();
+                            let new_len = *len;
+                            set_from_thunk(state, || Failed(new_consumed, new_len));
+                            Err((None, new_cursor))
+                        }
                     }
-                    */
                 }
                 Done => { Err((Some(OOB::Reject), cursor)) }
             }
