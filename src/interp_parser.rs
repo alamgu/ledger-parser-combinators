@@ -236,6 +236,7 @@ impl< N, I, const M : usize> InterpParser<DArray<N, I, M>> for DefaultInterp whe
 }
 */
 
+// Action is essentailly an fmap that can fail.
 pub struct Action<S, F>(pub S, pub F);
 
 impl<A, R, S : InterpParser<A>> InterpParser<A> for Action<S, fn(&<S as InterpParser<A>>::Returning, &mut Option<R>) -> Option<()>> 

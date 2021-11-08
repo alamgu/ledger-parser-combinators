@@ -531,6 +531,7 @@ impl JsonInterp<JsonNumber> for DropInterp {
     }
 }
 
+#[derive(Debug)]
 pub enum JsonArrayDropState<S, D> {
     Start,
     First,
@@ -774,14 +775,11 @@ macro_rules! define_json_struct_interp {
                 $( DropInterp : JsonInterp<[<Field $field:camel>]> ),*
                 {
                     type State = < [<$name DropInterp>] as JsonInterp<$name<$([<Field $field:camel>]),*> >>::State;
-                    type Returning = ();
+                    type Returning = < [<$name DropInterp>] as JsonInterp<$name<$([<Field $field:camel>]),*> >>::Returning;
                     fn init(&self) -> Self::State { <[<$name DropInterp>] as JsonInterp<$name<$([<Field $field:camel>]),*> >>::init(&[<$name:upper _DROP_INTERP>]) }
     #[inline(never)]
                     fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<$crate::interp_parser::OOB>> {
-                        let mut scratch = None;
-                        <[<$name DropInterp>] as JsonInterp<$name<$([<Field $field:camel>]),*> >>::parse(&[<$name:upper _DROP_INTERP>], full_state, token, &mut scratch)?;
-                        *destination = Some(());
-                        Ok(())
+                        <[<$name DropInterp>] as JsonInterp<$name<$([<Field $field:camel>]),*> >>::parse(&[<$name:upper _DROP_INTERP>], full_state, token, destination)
                 }
             }
         }
