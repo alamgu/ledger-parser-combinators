@@ -741,7 +741,7 @@ macro_rules! define_json_struct_interp {
                             match &key[..] {
                                 $(
                                     $crate::json_interp::bstringify!($field) => {
-                                        let _ = write!(DBG, "json-struct-interp parser: checking key {:?}\n", core::str::from_utf8(key));
+                                        // let _ = write!(DBG, "json-struct-interp parser: checking key {:?}\n", core::str::from_utf8(key));
                                         [<$name StateEnum>]::[<Field $field:camel>](<[<Field $field:camel Interp>] as JsonInterp<[<Field $field:camel>]>>::init(&self.[<field_ $field:snake>]))
                                     }
                                 )*
