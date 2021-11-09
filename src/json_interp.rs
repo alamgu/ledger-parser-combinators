@@ -237,6 +237,8 @@ pub enum DropInterpStateEnum {
 }
 
 use arrayvec::ArrayVec;
+
+#[derive(Debug)]
 pub struct DropInterpJsonState {
     stack : ArrayVec<bool, 32>, // True = Object, False = Array
     seen_item : bool,
@@ -613,6 +615,7 @@ impl<A, R, S : JsonInterp<A>> JsonInterp<A> for Action<S, fn(&<S as JsonInterp<A
 
 pub struct JsonStringAccumulate<const N : usize>;
 
+#[derive(Debug)]
 pub enum JsonStringAccumulateState<const N : usize> {
     Start,
     Accumulating,
@@ -695,11 +698,13 @@ fn test_json_string_enum() {
 macro_rules! define_json_struct_interp {
     { $name:ident $n:literal { $($field:ident : $schemaType:ty),* } } => {
         $crate::json::paste! {
+            #[derive(Debug)]
             pub struct [<$name State>]<$([<Field $field:camel>]),* > {
                 state : [<$name StateEnum>]<$([<Field $field:camel>]),*>// ,
                 // results : $name<$([<Field $field:camel Result>]),*>
             }
 
+            #[derive(Debug)]
             pub enum [<$name StateEnum>]<$([<Field $field:camel>]),*> {
                 Start,
                 Key(<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::State, Option<<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::Returning>),
