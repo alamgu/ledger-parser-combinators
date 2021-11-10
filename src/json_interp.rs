@@ -4,6 +4,7 @@ pub use paste::paste;
 pub use bstringify::bstringify;
 use crate::json::*;
 use crate::interp_parser::*;
+#[allow(unused_imports)]
 use core::fmt::Write;
 
 #[cfg(all(target_os="nanos", test))]
@@ -12,7 +13,7 @@ use core::fmt::Write;
 #[allow(unused_imports)]
     use nanos_sdk::{TestType}; // , Pic};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum JsonToken<'a> {
     BeginArray,
     EndArray,
@@ -36,7 +37,6 @@ pub trait JsonInterp<S> {
     type State;
     type Returning;
     fn init(&self) -> Self::State;
-    #[inline(never)]
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>>;
 }
 
@@ -699,13 +699,7 @@ macro_rules! define_json_struct_interp {
     { $name:ident $n:literal { $($field:ident : $schemaType:ty),* } } => {
         $crate::json::paste! {
             #[derive(Debug)]
-            pub struct [<$name State>]<$([<Field $field:camel>]),* > {
-                state : [<$name StateEnum>]<$([<Field $field:camel>]),*>// ,
-                // results : $name<$([<Field $field:camel Result>]),*>
-            }
-
-            #[derive(Debug)]
-            pub enum [<$name StateEnum>]<$([<Field $field:camel>]),*> {
+            pub enum [<$name State>]<$([<Field $field:camel>]),*> {
                 Start,
                 Key(<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::State, Option<<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::Returning>),
                 KeySep(<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::Returning),
@@ -724,25 +718,27 @@ macro_rules! define_json_struct_interp {
                 type Returning = $name <
                     $(Option<<[<Field $field:camel Interp>] as JsonInterp<[<Field $field:camel>]>>::Returning>),*
                     >;
-                fn init(&self) -> Self::State { Self::State { state: [<$name StateEnum>]::Start } }
+                fn init(&self) -> Self::State { [<$name State>]::Start }
     #[inline(never)]
-                fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<$crate::interp_parser::OOB>> {
-                    full_state.state = match (&mut full_state.state, token) {
+                fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<$crate::interp_parser::OOB>> {
+                    match state {
                         // Object handling
-                        ([<$name StateEnum>]::Start, JsonToken::BeginObject) => {
+                        [<$name State>]::Start if token == JsonToken::BeginObject => {
                             *destination = Some($name {$( [<field_ $field:snake>] : None ),* } );
-                            [<$name StateEnum>]::Key(<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::init(&JsonStringAccumulate), None)
+                            $crate::interp_parser::set_from_thunk(state, || [<$name State>]::Key(<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::init(&JsonStringAccumulate), None));
                         }
-                        ([<$name StateEnum>]::Key(ref mut key_state, ref mut key_destination), token) => {
-                            [<$name StateEnum>]::KeySep({<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::parse(&JsonStringAccumulate, key_state, token, key_destination)?; core::mem::take(key_destination).ok_or(Some($crate::interp_parser::OOB::Reject))? })
+                        [<$name State>]::Key(ref mut key_state, ref mut key_destination) => {
+                            <JsonStringAccumulate<$n> as JsonInterp<JsonString>>::parse(&JsonStringAccumulate, key_state, token, key_destination)?;
+                            let key_val = core::mem::take(key_destination).ok_or(Some($crate::interp_parser::OOB::Reject))?;
+                            $crate::interp_parser::set_from_thunk(state, || [<$name State>]::KeySep(key_val));
                         }
 
-                        ([<$name StateEnum>]::KeySep(ref key), JsonToken::NameSeparator) => {
+                        [<$name State>]::KeySep(ref key) if token == JsonToken::NameSeparator => {
                             match &key[..] {
                                 $(
                                     $crate::json_interp::bstringify!($field) => {
                                         // let _ = write!(DBG, "json-struct-interp parser: checking key {:?}\n", core::str::from_utf8(key));
-                                        [<$name StateEnum>]::[<Field $field:camel>](<[<Field $field:camel Interp>] as JsonInterp<[<Field $field:camel>]>>::init(&self.[<field_ $field:snake>]))
+                                        $crate::interp_parser::set_from_thunk(state, || [<$name State>]::[<Field $field:camel>](<[<Field $field:camel Interp>] as JsonInterp<[<Field $field:camel>]>>::init(&self.[<field_ $field:snake>])));
                                     }
                                 )*
                                 ,
@@ -752,22 +748,23 @@ macro_rules! define_json_struct_interp {
                             }
                         }
                         $(
-                        ([<$name StateEnum>]::[<Field $field:camel>](ref mut sub), token) => {
+                        [<$name State>]::[<Field $field:camel>](ref mut sub) => {
                                 let rv_temp=<[<Field $field:camel Interp>] as JsonInterp<[<Field $field:camel>]>>::parse(&self.[<field_ $field:snake>], sub, token, &mut destination.as_mut().ok_or(Some($crate::interp_parser::OOB::Reject))?.[<field_ $field:snake>]);//);
                                 rv_temp?;
-                            [<$name StateEnum>]::ValueSep
+                            $crate::interp_parser::set_from_thunk(state, || [<$name State>]::ValueSep);
                         })*
 
-                        ([<$name StateEnum>]::ValueSep, JsonToken::ValueSeparator) => {
-                            [<$name StateEnum>]::Key(<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::init(&JsonStringAccumulate), None)
+                        [<$name State>]::ValueSep if token == JsonToken::ValueSeparator => {
+                            $crate::interp_parser::set_from_thunk(state, || [<$name State>]::Key(<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::init(&JsonStringAccumulate), None));
                         }
-                        ([<$name StateEnum>]::ValueSep, JsonToken::EndObject) => {
-                            [<$name StateEnum>]::End
+                        [<$name State>]::ValueSep if token == JsonToken::EndObject => {
+                            $crate::interp_parser::set_from_thunk(state, || [<$name State>]::End);
+                            return Ok(());
                         }
                         _ => return Err(Some($crate::interp_parser::OOB::Reject)),
                     };
-                    match full_state.state {
-                        [<$name StateEnum>]::End => Ok(()),
+                    match state {
+                        [<$name State>]::End => Ok(()),
                         _ => Err(None)
                     }
                 }

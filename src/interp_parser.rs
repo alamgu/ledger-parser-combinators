@@ -42,7 +42,6 @@ pub trait InterpParser<P> {
     type State;
     type Returning;
     fn init(&self) -> Self::State;
-    #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a>;
 }
 
@@ -62,7 +61,7 @@ pub fn init_with_default<X: Default>(x: &mut Option<X>) {
 }
 
 #[inline(never)]
-pub fn set_from_thunk<X, F: Fn() -> X>(x: &mut X, f: F) {
+pub fn set_from_thunk<X, F: FnOnce() -> X>(x: &mut X, f: F) {
     *x = f();
 }
 
