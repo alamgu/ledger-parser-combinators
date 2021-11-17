@@ -3,6 +3,7 @@
 pub use paste::paste;
 pub use bstringify::bstringify;
 use crate::json::*;
+use crate::core_parsers::Alt;
 use crate::interp_parser::*;
 #[allow(unused_imports)]
 use core::fmt::Write;
@@ -648,11 +649,70 @@ impl<const N : usize> JsonInterp<JsonString> for JsonStringAccumulate<N> {
     }
 }
 
+impl<const N : usize> JsonInterp<JsonNumber> for JsonStringAccumulate<N> {
+    type State = JsonStringAccumulateState<N>;
+    type Returning = ArrayVec<u8,N>;
+    fn init(&self) -> Self::State { JsonStringAccumulateState::Start }
+    #[inline(never)]
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        match (state, token) {
+            (state@JsonStringAccumulateState::Start, JsonToken::BeginNumber) => {
+                set_from_thunk(destination, || Some(ArrayVec::new()));
+                *state = JsonStringAccumulateState::Accumulating;
+                Err(None)
+            }
+            (JsonStringAccumulateState::Accumulating, JsonToken::NumberChunk(c)) => {
+                destination.as_mut().ok_or(Some(OOB::Reject))?.try_extend_from_slice(c).map_err(|_| Some(OOB::Reject))?;
+                Err(None)
+            }
+            (state@JsonStringAccumulateState::Accumulating, JsonToken::EndNumber) => {
+                *state = JsonStringAccumulateState::End;
+                Ok(())
+            }
+            _ => {
+                Err(Some(OOB::Reject))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 #[test]
 fn test_json_string_accum() {
     use core::convert::TryInto;
     test_json_interp_parser::<Json<JsonStringAccumulate<10>>, Json<JsonString> >(&Json(JsonStringAccumulate), b"\"foo\nbar\"", Ok(((&b"foo\nbar"[..]).try_into().unwrap(), b"")));
+}
+
+pub enum AltResult<A,B> {
+    First(A),
+    Second(B)
+}
+
+impl<A, B, I: JsonInterp<A>, J: JsonInterp<B>> JsonInterp<Alt<A, B>> for Alt<I, J> {
+    type State = (
+        Option<I::State>,
+        Option<I::Returning>,
+        Option<J::State>,
+        Option<J::Returning>);
+    type Returning = AltResult<<I as JsonInterp<A>>::Returning, <J as JsonInterp<B>>::Returning>;
+    fn init(&self) -> Self::State {
+        (Some(self.0.init()), None, Some(self.1.init()), None)
+    }
+    #[inline(never)]
+    fn parse<'a>(&self, (ref mut state1, ref mut rv1, ref mut state2, ref mut rv2): &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        match (state1.as_mut().map(|s| self.0.parse(s, token, rv1)).transpose()
+            , state2.as_mut().map(|s| self.1.parse(s, token, rv2)).transpose()) {
+            (Err(None), Err(None)) => Err(None),
+            (Err(None), Ok(None)) => Err(None),
+            (Ok(None), Err(None)) => Err(None),
+            // Left-preference. This will complicate things a bit if we ever try to do host-side hinting.
+            (Ok(Some(())), _) => { set_from_thunk(destination, || core::mem::take(rv1).map(AltResult::First)); Ok(()) }
+            (Err(Some(OOB::Reject)), Ok(Some(()))) | (Ok(None), Ok(Some(()))) => { set_from_thunk(destination, || core::mem::take(rv2).map(AltResult::Second)); Ok(()) }
+            (Err(Some(OOB::Reject)), Err(None)) => { set_from_thunk(state1, || None); Err(None) }
+            (Err(None), Err(Some(OOB::Reject))) => { set_from_thunk(state2, || None); Err(None) }
+            _ => Err(Some(OOB::Reject)),
+        }
+    }
 }
 
 /*

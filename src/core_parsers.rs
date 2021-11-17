@@ -71,3 +71,4 @@ impl<I : RV, O, A, F: Fn(&I::R) -> (O, Option<A>)> RV for Action<I, O, A, F> {
 
 pub struct LengthFallback<N, S>(pub N, pub S);
 
+pub struct Alt<A, B>(pub A, pub B);
