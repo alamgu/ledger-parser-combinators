@@ -596,6 +596,43 @@ impl<T, S: JsonInterp<T>> JsonInterp<JsonArray<T>> for SubInterp<S> {
     }
 }
 
+
+pub struct AccumulateArray<ItemInterp, const N: usize>(pub ItemInterp);
+
+impl<T, S: JsonInterp<T>, const N: usize> JsonInterp<JsonArray<T>> for AccumulateArray<S, N>
+  where <S as JsonInterp<T>>::Returning: Clone {
+    type State = JsonArrayDropState<<S as JsonInterp<T>>::State, <S as JsonInterp<T>>::Returning>;
+    type Returning = ArrayVec<<S as JsonInterp<T>>::Returning, N>;
+    fn init(&self) -> Self::State { JsonArrayDropState::Start }
+    #[inline(never)]
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        use JsonArrayDropState::*;
+        use JsonToken::*;
+        loop {
+            match state {
+                Start if token == BeginArray => {
+                    *destination = Some(ArrayVec::<_, N>::new());
+                    set_from_thunk(state, || First);
+                }
+                First if token == EndArray => { return Ok(()) }
+                First => {
+                    set_from_thunk(state, || Item(<S as JsonInterp<T>>::init(&self.0), None));
+                    continue;
+                }
+                Item(ref mut s, ref mut sub_destination) => {
+                    <S as JsonInterp<T>>::parse(&self.0, s, token, sub_destination)?;
+                    destination.as_mut().ok_or(Some(OOB::Reject))?.try_push(sub_destination.as_ref().ok_or(Some(OOB::Reject))?.clone()).or(Err(Some(OOB::Reject)))?;
+                    set_from_thunk(state, || AfterValue);
+                }
+                AfterValue if token == ValueSeparator => { set_from_thunk(state, || Item(<S as JsonInterp<T>>::init(&self.0), None)); }
+                AfterValue if token == EndArray => { return Ok(()) }
+                _ => { return Err(Some(OOB::Reject)) }
+            };
+            return Err(None)
+        }
+    }
+}
+
 impl<A, R, S : JsonInterp<A>> JsonInterp<A> for Action<S, fn(&<S as JsonInterp<A>>::Returning, &mut Option<R>) -> Option<()>> {
     type State = (<S as JsonInterp<A> >::State, Option<<S as JsonInterp<A>>::Returning>);
     type Returning = R;
