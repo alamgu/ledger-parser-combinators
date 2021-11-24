@@ -26,7 +26,12 @@ macro_rules! define_json_struct {
                 $(pub [<field_ $field:snake>] : [<Field $field:camel>] ),*
             }
 
-            pub type [<$name Schema>] = $name<$($schemaType),*>;
+            pub struct [<$name Schema>];
+
+            #[macro_export]
+            macro_rules! [<$name:snake _definition>] {
+                { } => { $crate::define_json_struct_interp!{ $name $n { $($field : $schemaType),* } } }
+            }
         }
     }
 }

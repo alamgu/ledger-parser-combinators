@@ -7,6 +7,8 @@ use crate::core_parsers::Alt;
 use crate::interp_parser::*;
 #[allow(unused_imports)]
 use core::fmt::Write;
+#[cfg(logging)]
+use ledger_log::trace;
 
 #[cfg(all(target_os="nanos", test))]
     use testmacro::test_item as test;
@@ -217,7 +219,11 @@ impl<T, S : JsonInterp<T>> InterpParser<Json<T>> for Json<S> {
             break match <S as JsonInterp<T>>::parse(&self.0, &mut state.1, token, destination) {
                 Ok(()) => { Ok(new_cursor) }
                 Err(None) => { cursor = new_cursor; continue; }
-                Err(Some(a)) => { Err((Some(a), new_cursor)) }
+                Err(Some(a)) => { 
+                    #[cfg(logging)]
+                    trace!("Json parser rejected on token: {:?} after: {}", token, core::str::from_utf8(&chunk[0..chunk.len() - cursor.len()]).unwrap_or("UTF8FAILED"));
+                    Err((Some(a), new_cursor)) 
+                }
             }
         }
     }
@@ -597,7 +603,7 @@ impl<T, S: JsonInterp<T>> JsonInterp<JsonArray<T>> for SubInterp<S> {
     }
 }
 
-impl<A, R, S : JsonInterp<A>> JsonInterp<A> for Action<S, fn(&<S as JsonInterp<A>>::Returning, &mut Option<R>) -> Option<()>> {
+impl<A, R, S : JsonInterp<A>> JsonInterp<A> for Action<S, fn(&<S as JsonInterp<A>>::Returning, &mut Option<R>) -> Option<()>> where <S as JsonInterp<A>>::Returning: Debug {
     type State = (<S as JsonInterp<A> >::State, Option<<S as JsonInterp<A>>::Returning>);
     type Returning = R;
     fn init(&self) -> Self::State {
@@ -683,6 +689,7 @@ fn test_json_string_accum() {
     test_json_interp_parser::<Json<JsonStringAccumulate<10>>, Json<JsonString> >(&Json(JsonStringAccumulate), b"\"foo\nbar\"", Ok(((&b"foo\nbar"[..]).try_into().unwrap(), b"")));
 }
 
+#[derive(Debug)]
 pub enum AltResult<A,B> {
     First(A),
     Second(B)
@@ -758,6 +765,11 @@ fn test_json_string_enum() {
 macro_rules! define_json_struct_interp {
     { $name:ident $n:literal { $($field:ident : $schemaType:ty),* } } => {
         $crate::json::paste! {
+
+            pub struct [<$name Interp>]<$([<Field $field:camel>]: JsonInterp<$schemaType>),*> {
+                $(pub [<field_ $field:snake>] : [<Field $field:camel>] ),*
+            }
+
             #[derive(Debug)]
             pub enum [<$name State>]<$([<Field $field:camel>]),*> {
                 Start,
@@ -770,13 +782,13 @@ macro_rules! define_json_struct_interp {
 
             //impl<A, AA : JsonInterp<A>, B, BB : JsonInterp<B>, C, CC : JsonInterp<C>> JsonInterp<SomeStruct<A,B,C>> for SomeStruct<AA, BB, CC>
 
-            impl<$([<Field $field:camel>], [<Field $field:camel Interp>] : JsonInterp<[<Field $field:camel>]>),*> JsonInterp<$name<$([<Field $field:camel>]),*>> for $name<$([<Field $field:camel Interp>]),*> {
+            impl<$([<Field $field:camel Interp>] : JsonInterp<$schemaType>),*> JsonInterp<[<$name:camel Schema>]> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
                 type State = [<$name State>]<
-                    $(<[<Field $field:camel Interp>] as JsonInterp<[<Field $field:camel>]>>::State),*// ,
-                    // $(Option<<[<Field $field:camel Interp>] as JsonInterp<[<Field $field:camel>]>>::Returning>),*
+                    $(<[<Field $field:camel Interp>] as JsonInterp<$schemaType>>::State),*// ,
+                    // $(Option<<[<Field $field:camel Interp>] as JsonInterp<$schemaType>>::Returning>),*
                     >;
                 type Returning = $name <
-                    $(Option<<[<Field $field:camel Interp>] as JsonInterp<[<Field $field:camel>]>>::Returning>),*
+                    $(Option<<[<Field $field:camel Interp>] as JsonInterp<$schemaType>>::Returning>),*
                     >;
                 fn init(&self) -> Self::State { [<$name State>]::Start }
     #[inline(never)]
@@ -798,7 +810,7 @@ macro_rules! define_json_struct_interp {
                                 $(
                                     $crate::json_interp::bstringify!($field) => {
                                         // let _ = write!(DBG, "json-struct-interp parser: checking key {:?}\n", core::str::from_utf8(key));
-                                        $crate::interp_parser::set_from_thunk(state, || [<$name State>]::[<Field $field:camel>](<[<Field $field:camel Interp>] as JsonInterp<[<Field $field:camel>]>>::init(&self.[<field_ $field:snake>])));
+                                        $crate::interp_parser::set_from_thunk(state, || [<$name State>]::[<Field $field:camel>](<[<Field $field:camel Interp>] as JsonInterp<$schemaType>>::init(&self.[<field_ $field:snake>])));
                                     }
                                 )*
                                 ,
@@ -809,7 +821,7 @@ macro_rules! define_json_struct_interp {
                         }
                         $(
                         [<$name State>]::[<Field $field:camel>](ref mut sub) => {
-                                let rv_temp=<[<Field $field:camel Interp>] as JsonInterp<[<Field $field:camel>]>>::parse(&self.[<field_ $field:snake>], sub, token, &mut destination.as_mut().ok_or(Some($crate::interp_parser::OOB::Reject))?.[<field_ $field:snake>]);//);
+                                let rv_temp=<[<Field $field:camel Interp>] as JsonInterp<$schemaType>>::parse(&self.[<field_ $field:snake>], sub, token, &mut destination.as_mut().ok_or(Some($crate::interp_parser::OOB::Reject))?.[<field_ $field:snake>]);//);
                                 rv_temp?;
                             $crate::interp_parser::set_from_thunk(state, || [<$name State>]::ValueSep);
                         })*
@@ -831,17 +843,17 @@ macro_rules! define_json_struct_interp {
             }
 
 
-            type [<$name DropInterp>] = $name<$(define_json_struct_interp!{ DROP $field DropInterp } ),*>;
+            type [<$name DropInterp>] = [<$name:camel Interp>]<$(define_json_struct_interp!{ DROP $field DropInterp } ),*>;
             const [<$name:upper _DROP_INTERP>] : [<$name DropInterp>] = [<$name DropInterp>] { $( [<field_ $field:snake>]: DropInterp ),* };
             impl<$([<Field $field:camel>]),*> JsonInterp<$name<$([<Field $field:camel>]),*> > for DropInterp where
                 $( DropInterp : JsonInterp<[<Field $field:camel>]> ),*
                 {
-                    type State = < [<$name DropInterp>] as JsonInterp<$name<$([<Field $field:camel>]),*> >>::State;
-                    type Returning = < [<$name DropInterp>] as JsonInterp<$name<$([<Field $field:camel>]),*> >>::Returning;
-                    fn init(&self) -> Self::State { <[<$name DropInterp>] as JsonInterp<$name<$([<Field $field:camel>]),*> >>::init(&[<$name:upper _DROP_INTERP>]) }
+                    type State = < [<$name DropInterp>] as JsonInterp<[<$name Schema>] >>::State;
+                    type Returning = < [<$name DropInterp>] as JsonInterp<[<$name Schema>] >>::Returning;
+                    fn init(&self) -> Self::State { <[<$name DropInterp>] as JsonInterp<[<$name Schema>]>>::init(&[<$name:upper _DROP_INTERP>]) }
     #[inline(never)]
                     fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<$crate::interp_parser::OOB>> {
-                        <[<$name DropInterp>] as JsonInterp<$name<$([<Field $field:camel>]),*> >>::parse(&[<$name:upper _DROP_INTERP>], full_state, token, destination)
+                        <[<$name DropInterp>] as JsonInterp<[<$name Schema>]>>::parse(&[<$name:upper _DROP_INTERP>], full_state, token, destination)
                 }
             }
         }
@@ -860,12 +872,13 @@ mod tests {
             bar_noodle : JsonString
         }
     }
-    define_json_struct_interp!{
+    some_struct_definition!();
+/*    define_json_struct_interp!{
         SomeStruct 10 {
             FooString : JsonString,
             bar_noodle : JsonString
         }
-    }
+    } */
 
     fn mk_astr<const N : usize>(c: &[u8]) -> Option<ArrayVec<u8, N>> {
         let mut v = ArrayVec::new();
@@ -877,14 +890,18 @@ mod tests {
 
     #[test]
     fn test_somestruct_macro() {
+        let _ = SomeStructInterp {
+            field_foo_string: DropInterp,
+            field_bar_noodle: DropInterp
+        };
 
-        test_json_interp_parser::<Json<SomeStruct<JsonStringAccumulate<10>, JsonStringAccumulate<10>>>, Json<SomeStructSchema> >(
-            &Json(SomeStruct { field_foo_string: JsonStringAccumulate, field_bar_noodle: JsonStringAccumulate } ),
+        test_json_interp_parser::<Json<SomeStructInterp<JsonStringAccumulate<10>, JsonStringAccumulate<10>>>, Json<SomeStructSchema> >(
+            &Json(SomeStructInterp { field_foo_string: JsonStringAccumulate, field_bar_noodle: JsonStringAccumulate } ),
             b"{\"FooString\": \"one\", \"bar_noodle\": \"two\"}",
             Ok((SomeStruct { field_foo_string: mk_astr(b"one"), field_bar_noodle: mk_astr(b"two") }, b"")));
 
-        test_json_interp_parser::<Json<SomeStruct<JsonStringAccumulate<10>, JsonStringAccumulate<10>>>, Json<SomeStructSchema> >(
-            &Json(SomeStruct { field_foo_string: JsonStringAccumulate, field_bar_noodle: JsonStringAccumulate } ),
+        test_json_interp_parser::<Json<SomeStructInterp<JsonStringAccumulate<10>, JsonStringAccumulate<10>>>, Json<SomeStructSchema> >(
+            &Json(SomeStructInterp { field_foo_string: JsonStringAccumulate, field_bar_noodle: JsonStringAccumulate } ),
             b"{\"NotFooStr\": \"one\", \"bar_noodle\": \"two\"}",
             Err((Some(OOB::Reject), b" \"one\", \"bar_noodle\": \"two\"}")));
     }
