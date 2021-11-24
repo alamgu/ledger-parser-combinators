@@ -18,6 +18,10 @@ generic-array = { version = "0.14.4", default-features = false }
 log = "0.4.14"
 paste = "1.0"
 bstringify = "0.1.2"
+ledger-log = { path = "../ledger-log", optional = true }
+
+[features]
+"logging" = [ "ledger-log" ]
 
 [target.thumbv6m-none-eabi.dependencies]
 nanos_sdk = { git = "https://github.com/LedgerHQ/ledger-nanos-sdk.git", features = [ "speculos" ] } 
