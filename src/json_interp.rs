@@ -617,7 +617,7 @@ impl<T, S: JsonInterp<T>, const N: usize> JsonInterp<JsonArray<T>> for Accumulat
         loop {
             match state {
                 Start if token == BeginArray => {
-                    *destination = Some(ArrayVec::<_, N>::new());
+                    set_from_thunk(destination, || Some(ArrayVec::<_, N>::new()));
                     set_from_thunk(state, || First);
                 }
                 First if token == EndArray => { return Ok(()) }
@@ -832,11 +832,14 @@ macro_rules! define_json_struct_interp {
                     match state {
                         // Object handling
                         [<$name State>]::Start if token == JsonToken::BeginObject => {
-                            *destination = Some($name {$( [<field_ $field:snake>] : None ),* } );
+                            $crate::interp_parser::set_from_thunk(destination, || Some($name {$( [<field_ $field:snake>] : None ),* } ));
                             $crate::interp_parser::set_from_thunk(state, || [<$name State>]::Key(<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::init(&JsonStringAccumulate), None));
                         }
                         [<$name State>]::Key(ref mut key_state, ref mut key_destination) => {
                             <JsonStringAccumulate<$n> as JsonInterp<JsonString>>::parse(&JsonStringAccumulate, key_state, token, key_destination)?;
+                            // Note: if we can figure out how, making key_val into a local that
+                            // reserves stack at less than the function scope will make this parse
+                            // cheaper.
                             let key_val = core::mem::take(key_destination).ok_or(Some($crate::interp_parser::OOB::Reject))?;
                             $crate::interp_parser::set_from_thunk(state, || [<$name State>]::KeySep(key_val));
                         }
@@ -881,8 +884,7 @@ macro_rules! define_json_struct_interp {
 
             type [<$name DropInterp>] = [<$name:camel Interp>]<$(define_json_struct_interp!{ DROP $field DropInterp } ),*>;
             const [<$name:upper _DROP_INTERP>] : [<$name DropInterp>] = [<$name DropInterp>] { $( [<field_ $field:snake>]: DropInterp ),* };
-            impl<$([<Field $field:camel>]),*> JsonInterp<$name<$([<Field $field:camel>]),*> > for DropInterp where
-                $( DropInterp : JsonInterp<[<Field $field:camel>]> ),*
+            impl JsonInterp<[<$name Schema>] > for DropInterp where
                 {
                     type State = < [<$name DropInterp>] as JsonInterp<[<$name Schema>] >>::State;
                     type Returning = < [<$name DropInterp>] as JsonInterp<[<$name Schema>] >>::Returning;

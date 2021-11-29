@@ -371,7 +371,7 @@ impl<N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> InterpParser
                 Length(ref mut nstate, ref mut length_out) => {
                     cursor = <DefaultInterp as InterpParser<N>>::parse(&DefaultInterp, nstate, cursor, length_out)?;
                     let len = <usize as TryFrom<<DefaultInterp as InterpParser<N>>::Returning>>::try_from(length_out.ok_or(rej(cursor))?).or(Err(rej(cursor)))?;
-                    *destination = Some((None, self.0()));
+                    set_from_thunk(destination, || Some((None, self.0())));
                     set_from_thunk(state, || Element(0, len, <S as InterpParser<I>>::init(&self.2)));
                     continue;
                 }
