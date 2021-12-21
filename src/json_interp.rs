@@ -848,13 +848,13 @@ macro_rules! define_json_struct_interp {
                             match &key[..] {
                                 $(
                                     $crate::json_interp::bstringify!($field) => {
-                                        // let _ = write!(DBG, "json-struct-interp parser: checking key {:?}\n", core::str::from_utf8(key));
+                                        trace!("json-struct-interp parser: checking key {:?}\n", core::str::from_utf8(key));
                                         $crate::interp_parser::set_from_thunk(state, || [<$name State>]::[<Field $field:camel>](<[<Field $field:camel Interp>] as JsonInterp<$schemaType>>::init(&self.[<field_ $field:snake>])));
                                     }
                                 )*
                                 ,
                                 _ => {
-                                    let _ = write!(DBG, "json-struct-interp parser: Got unexpected key {:?}\n", core::str::from_utf8(key));
+                                    error!("json-struct-interp parser: Got unexpected key {:?}\n", core::str::from_utf8(key));
                                     return Err(Some($crate::interp_parser::OOB::Reject)) }
                             }
                         }
