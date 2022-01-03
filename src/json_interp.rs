@@ -7,7 +7,7 @@ use crate::core_parsers::Alt;
 use crate::interp_parser::*;
 #[allow(unused_imports)]
 use core::fmt::Write;
-#[cfg(logging)]
+#[cfg(feature = "logging")]
 use ledger_log::trace;
 
 #[cfg(all(target_os="nanos", test))]
@@ -15,6 +15,31 @@ use ledger_log::trace;
 #[cfg(all(target_os="nanos", test))]
 #[allow(unused_imports)]
     use nanos_sdk::{TestType}; // , Pic};
+
+
+// Monoid when A=Self, otherwise conceptually obeys
+// self.add_and_set(a: A) = self.addAndSet(pure(a) : Self)
+pub trait Summable<A> {
+    // Implementing a mutating summation here as an optimization for stack use.
+    fn add_and_set(&mut self, other: &A);
+    fn zero() -> Self;
+}
+
+impl<A> Summable<A> for () {
+    fn add_and_set(&mut self, _other: &A) {
+    }
+    fn zero() -> Self { () }
+}
+
+#[derive(Debug)]
+pub struct Count(pub u64);
+
+impl<A> Summable<A> for Count {
+    fn add_and_set(&mut self, _other: &A) {
+        self.0+=1;
+    }
+    fn zero() -> Self { Count(0) }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum JsonToken<'a> {
@@ -220,7 +245,7 @@ impl<T, S : JsonInterp<T>> InterpParser<Json<T>> for Json<S> {
                 Ok(()) => { Ok(new_cursor) }
                 Err(None) => { cursor = new_cursor; continue; }
                 Err(Some(a)) => { 
-                    #[cfg(logging)]
+                    #[cfg(feature = "logging")]
                     trace!("Json parser rejected on token: {:?} after: {}", token, core::str::from_utf8(&chunk[0..chunk.len() - cursor.len()]).unwrap_or("UTF8FAILED"));
                     Err((Some(a), new_cursor)) 
                 }
@@ -587,21 +612,67 @@ impl<T, S: JsonInterp<T>> JsonInterp<JsonArray<T>> for SubInterp<S> {
         let st = (state, token);
         loop {
             match st {
-                (Start, BeginArray) => { set_from_thunk(st.0, || First); }
-                (First, EndArray) => { *destination=Some(()); return Ok(()) }
+                (Start, BeginArray) => { *destination=Some(()); set_from_thunk(st.0, || First); }
+                (First, EndArray) => { return Ok(()) }
                 (First, _) => {
                     set_from_thunk(st.0, || Item(<S as JsonInterp<T>>::init(&self.0), None));
                     continue;
                 }
-                (Item(ref mut s, ref mut sub_destination), tok) => { <S as JsonInterp<T>>::parse(&self.0, s, tok, sub_destination)?; set_from_thunk(st.0, || AfterValue); }
+                (Item(ref mut s, ref mut sub_destination), tok) => {
+                    <S as JsonInterp<T>>::parse(&self.0, s, tok, sub_destination)?;
+                    // destination.as_mut().ok_or(Some(OOB::Reject))?.add_and_set(sub_destination.as_ref().ok_or(Some(OOB::Reject))?);
+                    set_from_thunk(st.0, || AfterValue);
+                }
                 (AfterValue, ValueSeparator) => { set_from_thunk(st.0, || Item(<S as JsonInterp<T>>::init(&self.0), None)); }
-                (AfterValue, EndArray) => { *destination=Some(()); return Ok(()) }
+                (AfterValue, EndArray) => { return Ok(()) }
                 _ => { return Err(Some(OOB::Reject)) }
             };
             return Err(None)
         }
     }
 }
+
+// I'd love to unify this with the above, but I can't quite see a way to default RV to (). Could
+// also allow the Summable instance to reject and this would also cover AccumulateArray.
+pub struct SubInterpM<S, RV = ()>(S, core::marker::PhantomData<RV>);
+
+impl<S, RV> SubInterpM<S, RV> {
+    pub const fn new(s: S) -> Self { SubInterpM(s, core::marker::PhantomData) }
+}
+
+impl<T, S: JsonInterp<T>, RV: Debug + Summable<<S as JsonInterp<T>>::Returning>> JsonInterp<JsonArray<T>> for SubInterpM<S, RV> {
+    type State = JsonArrayDropState<<S as JsonInterp<T>>::State, <S as JsonInterp<T>>::Returning>;
+    type Returning = RV;
+    fn init(&self) -> Self::State { JsonArrayDropState::Start }
+    #[inline(never)]
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        use JsonArrayDropState::*;
+        use JsonToken::*;
+        let st = (state, token);
+        loop {
+            match st {
+                (Start, BeginArray) => { *destination=Some(Summable::zero()); set_from_thunk(st.0, || First); }
+                (First, EndArray) => { return Ok(()) }
+                (First, _) => {
+                    set_from_thunk(st.0, || Item(<S as JsonInterp<T>>::init(&self.0), None));
+                    continue;
+                }
+                (Item(ref mut s, ref mut sub_destination), tok) => {
+                    <S as JsonInterp<T>>::parse(&self.0, s, tok, sub_destination)?;
+                    destination.as_mut().ok_or(Some(OOB::Reject))?.add_and_set(sub_destination.as_ref().ok_or(Some(OOB::Reject))?);
+                    set_from_thunk(st.0, || AfterValue);
+                }
+                (AfterValue, ValueSeparator) => { set_from_thunk(st.0, || Item(<S as JsonInterp<T>>::init(&self.0), None)); }
+                (AfterValue, EndArray) => { return Ok(()) }
+                _ => {
+                    return Err(Some(OOB::Reject))
+                }
+            };
+            return Err(None)
+        }
+    }
+}
+
 
 pub struct AccumulateArray<ItemInterp, const N: usize>(pub ItemInterp);
 
@@ -801,6 +872,15 @@ fn test_json_string_enum() {
 macro_rules! define_json_struct_interp {
     { $name:ident $n:literal { $($field:ident : $schemaType:ty),* } } => {
         $crate::json::paste! {
+
+            impl<$([<Field $field:camel>]: $crate::json_interp::Summable<[<Field $field:camel>]>),*> $crate::json_interp::Summable<Self> for $name<$([<Field $field:camel>]),*> {
+                fn add_and_set(&mut self, other: &Self) {
+                    $(self.[<field_ $field:snake>].add_and_set(&other.[<field_ $field:snake>]));*
+                }
+                fn zero() -> Self {
+                    $name { $([<field_ $field:snake>]: $crate::json_interp::Summable::<[<Field $field:camel>]>::zero() ),* }
+                }
+            }
 
             pub struct [<$name Interp>]<$([<Field $field:camel>]: JsonInterp<$schemaType>),*> {
                 $(pub [<field_ $field:snake>] : [<Field $field:camel>] ),*
