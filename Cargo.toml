@@ -18,7 +18,8 @@ generic-array = { version = "0.14.4", default-features = false }
 log = "0.4.14"
 paste = "1.0"
 bstringify = "0.1.2"
-ledger-log = { path = "../ledger-log", optional = true }
+# ledger-log = { path = "../ledger-log", optional = true }
+ledger-log = { git = "https://github.com/obsidiansystems/ledger-platform", branch="jg-add-rust-libs", features=["log_trace"], optional = true }
 
 [features]
 "logging" = [ "ledger-log" ]
