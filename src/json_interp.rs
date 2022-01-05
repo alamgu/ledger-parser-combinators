@@ -149,7 +149,7 @@ fn get_json_token<'a>(state: &mut JsonTokenizerState, chunk: &'a [u8]) -> Result
                                     }
                                     '\\' => {
                                         *escape_state = JsonStringEscapeState::FirstEscape;
-                                        Ok(JsonToken::StringChunk(&cursor[0..1]))
+                                        Ok(JsonToken::StringChunk(&cursor[0..0]))
                                     }
                                     /*'\0'..='\u{001f}' => {
                                         reject(cursor)
@@ -161,14 +161,26 @@ fn get_json_token<'a>(state: &mut JsonTokenizerState, chunk: &'a [u8]) -> Result
                                 // Expedient. Incorrect.
                                 // TODO: fix to validate escape sequences properly.
                                 *escape_state = JsonStringEscapeState::NotEscaped;
-                                Ok(JsonToken::StringChunk(&cursor[0..0]))
-
-                                    /*match next_char {
+                                match next_char {
+                                    '"' | '\\' | '/' => {
+                                        Ok(JsonToken::StringChunk(&cursor[0..1]))
+                                    }
+                                    'b' => Ok(JsonToken::StringChunk(b"\x08")),
+                                    'f' => Ok(JsonToken::StringChunk(b"\x0c")),
+                                    'n' => Ok(JsonToken::StringChunk(b"\n")),
+                                    'r' => Ok(JsonToken::StringChunk(b"\r")),
+                                    't' => Ok(JsonToken::StringChunk(b"\t")),
+                                    'u' => {
+                                        *escape_state = JsonStringEscapeState::InSequence(0);
+                                        Ok(JsonToken::StringChunk(&cursor[0..0]))
+                                    }
+                                    _ => {
+                                        reject(cursor)
+                                    }
                                 }
-                                reject(cursor)*/
                             }
-                            JsonStringEscapeState::InSequence(_some_u8) => {
-                                // Unreachable; when fixing the above fix here too.
+                            JsonStringEscapeState::InSequence(ref mut n) => {
+                                // No unicode support yet, sorry.
                                 reject(cursor)
                             }
                         }.and_then(|a| Ok((a, tail)))
@@ -659,6 +671,8 @@ impl<T, S: JsonInterp<T>, RV: Debug + Summable<<S as JsonInterp<T>>::Returning>>
                 }
                 (Item(ref mut s, ref mut sub_destination), tok) => {
                     <S as JsonInterp<T>>::parse(&self.0, s, tok, sub_destination)?;
+                    #[cfg(feature = "logging")]
+                    trace!("destination {:?}", destination);
                     destination.as_mut().ok_or(Some(OOB::Reject))?.add_and_set(sub_destination.as_ref().ok_or(Some(OOB::Reject))?);
                     set_from_thunk(st.0, || AfterValue);
                 }
@@ -795,6 +809,68 @@ fn test_json_string_accum() {
     use core::convert::TryInto;
     test_json_interp_parser::<Json<JsonStringAccumulate<10>>, Json<JsonString> >(&Json(JsonStringAccumulate), b"\"foo\nbar\"", Ok(((&b"foo\nbar"[..]).try_into().unwrap(), b"")));
 }
+
+// These are a bit over-specific, but the more general Alt costs potentially significant amounts
+// more memory.
+
+pub struct OrDropAny<A>(pub A);
+
+impl<A, I: JsonInterp<A>> JsonInterp<Alt<A, JsonAny>> for OrDropAny<I> {
+    type State = (
+        Option<I::State>,
+        Option<<DropInterp as JsonInterp<JsonAny>>::State>);
+    type Returning = Option< <I as JsonInterp<A>>::Returning >;
+    fn init(&self) -> Self::State {
+        (Some(self.0.init()), Some(<DropInterp as JsonInterp<JsonAny>>::init(&DropInterp)))
+    }
+    #[inline(never)]
+    fn parse<'a>(&self, (ref mut state1, ref mut state2): &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        let mut rv2 = None;
+        match destination { None => set_from_thunk(destination, ||Some(None)), _ => (), }
+        match (state1.as_mut().map(|s| self.0.parse(s, token, destination.as_mut().ok_or(Some(OOB::Reject))?)).transpose()
+            , state2.as_mut().map(|s| <DropInterp as JsonInterp<JsonAny>>::parse(&DropInterp, s, token, &mut rv2)).transpose()) {
+            (Err(None), Err(None)) => Err(None),
+            (Err(None), Ok(None)) => Err(None),
+            (Ok(None), Err(None)) => Err(None),
+            // Left-preference. This will complicate things a bit if we ever try to do host-side hinting.
+            (Ok(Some(())), _) => { Ok(()) } // set_from_thunk(destination, || core::mem::take(rv1).map(AltResult::First)); Ok(()) }
+            (Err(Some(OOB::Reject)), Ok(Some(()))) | (Ok(None), Ok(Some(()))) => { set_from_thunk(destination, || Some(None)); Ok(()) }
+            (Err(Some(OOB::Reject)), Err(None)) => { set_from_thunk(state1, || None); Err(None) }
+            (Err(None), Err(Some(OOB::Reject))) => { set_from_thunk(state2, || None); Err(None) }
+            _ => {set_from_thunk(destination, || None); Err(Some(OOB::Reject)) }
+        }
+    }
+}
+
+pub struct OrDrop<A>(pub A);
+
+impl<A, I: JsonInterp<A>> JsonInterp<A> for OrDrop<I> where DropInterp: JsonInterp<A> {
+    type State = (
+        Option<I::State>,
+        Option<<DropInterp as JsonInterp<A>>::State>);
+    type Returning = Option< <I as JsonInterp<A>>::Returning >;
+    fn init(&self) -> Self::State {
+        (Some(self.0.init()), Some(<DropInterp as JsonInterp<A>>::init(&DropInterp)))
+    }
+    #[inline(never)]
+    fn parse<'a>(&self, (ref mut state1, ref mut state2): &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        let mut rv2 = None;
+        match destination { None => set_from_thunk(destination, ||Some(None)), _ => (), }
+        match (state1.as_mut().map(|s| self.0.parse(s, token, destination.as_mut().ok_or(Some(OOB::Reject))?)).transpose()
+            , state2.as_mut().map(|s| <DropInterp as JsonInterp<A>>::parse(&DropInterp, s, token, &mut rv2)).transpose()) {
+            (Err(None), Err(None)) => Err(None),
+            (Err(None), Ok(None)) => Err(None),
+            (Ok(None), Err(None)) => Err(None),
+            // Left-preference. This will complicate things a bit if we ever try to do host-side hinting.
+            (Ok(Some(())), _) => { Ok(()) } // set_from_thunk(destination, || core::mem::take(rv1).map(AltResult::First)); Ok(()) }
+            (Err(Some(OOB::Reject)), Ok(Some(()))) | (Ok(None), Ok(Some(()))) => { set_from_thunk(destination, || Some(None)); Ok(()) }
+            (Err(Some(OOB::Reject)), Err(None)) => { set_from_thunk(state1, || None); Err(None) }
+            (Err(None), Err(Some(OOB::Reject))) => { set_from_thunk(state2, || None); Err(None) }
+            _ => {set_from_thunk(destination, || None); Err(Some(OOB::Reject)) }
+        }
+    }
+}
+
 
 #[derive(Debug)]
 pub enum AltResult<A,B> {
