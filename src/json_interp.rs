@@ -179,7 +179,7 @@ fn get_json_token<'a>(state: &mut JsonTokenizerState, chunk: &'a [u8]) -> Result
                                     }
                                 }
                             }
-                            JsonStringEscapeState::InSequence(ref mut n) => {
+                            JsonStringEscapeState::InSequence(ref mut _n) => {
                                 // No unicode support yet, sorry.
                                 reject(cursor)
                             }
@@ -1102,6 +1102,26 @@ mod tests {
 }
 
 
+
+pub struct Preaction<S>(pub fn() -> Option<()>, pub S);
+
+impl<A, S: JsonInterp<A>> JsonInterp<A> for Preaction<S> {
+    type State = Option<<S as JsonInterp<A>>::State>;
+    type Returning = <S as JsonInterp<A>>::Returning;
+
+    fn init(&self) -> Self::State { None }
+    #[inline(never)]
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        loop { break match state {
+            None => {
+                (self.0)().ok_or(Some(OOB::Reject))?;
+                set_from_thunk(state, || Some(<S as JsonInterp<A>>::init(&self.1)));
+                continue;
+            }
+            Some(ref mut s) => <S as JsonInterp<A>>::parse(&self.1, s, token, destination)
+        }}
+    }
+}
 
 /*
 impl JsonInterp<JsonStringEnum<STRS>> for DefaultInterp {
