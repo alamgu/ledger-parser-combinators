@@ -57,15 +57,6 @@ impl< I : RV, N : RV > RV for NOf<I, N> where
     type R = ();
 }
 
-pub struct Action<I : RV, O, A, F: Fn(&I::R) -> (O, Option<A>)> {
-    pub sub: I,
-    pub f: F,
-}
-
-impl<I : RV, O, A, F: Fn(&I::R) -> (O, Option<A>)> RV for Action<I, O, A, F> {
-    type R = O;
-}
-
 //pub struct DArray<I, N>;
 //pub struct Table;
 

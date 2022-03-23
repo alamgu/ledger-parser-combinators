@@ -2,6 +2,9 @@ use crate::core_parsers::*;
 use crate::endianness::{Endianness, Convert};
 use arrayvec::ArrayVec;
 
+#[cfg(feature = "logging")]
+use ledger_log::error;
+
 #[derive(PartialEq, Debug)]
 pub enum OOB {
     // Prompt removed due to excessive memory use; we gain testability improvements if we can
@@ -153,6 +156,20 @@ macro_rules! number_parser {
                 Ok(remainder)
             }
         }
+        impl<const E: Endianness> InterpParser<$p<E>> for DropInterp {
+            type State = <SubInterp<DropInterp> as InterpParser<Array<Byte, $size>>>::State;
+            type Returning = ();
+            fn init(&self) -> Self::State {
+                <SubInterp<DropInterp> as InterpParser<Array<Byte, $size>>>::init(&SubInterp(DropInterp))
+            }
+            #[inline(never)]
+            fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+                let mut sub_destination : Option<[(); $size]> = None;
+                let remainder = <SubInterp<DropInterp> as InterpParser<Array<Byte, $size>>>::parse(&SubInterp(DropInterp), state, chunk, &mut sub_destination)?;
+                *destination = Some(());
+                return Ok(remainder);
+            }
+        }
     }
 }
 number_parser! { U16, 2 }
@@ -236,9 +253,10 @@ impl< N, I, const M : usize> InterpParser<DArray<N, I, M>> for DefaultInterp whe
 */
 
 // Action is essentailly an fmap that can fail.
+#[derive(Clone)]
 pub struct Action<S, F>(pub S, pub F);
 
-impl<A, R, S : InterpParser<A>> InterpParser<A> for Action<S, fn(&<S as InterpParser<A>>::Returning, &mut Option<R>) -> Option<()>> 
+impl<A, R, S : InterpParser<A>> InterpParser<A> for Action<S, fn(&<S as InterpParser<A>>::Returning, &mut Option<R>) -> Option<()>>
 {
     type State = (<S as InterpParser<A> >::State, Option<<S as InterpParser<A> >::Returning>);
     type Returning = R;
@@ -260,6 +278,47 @@ fn rej<'a>(cnk: &'a [u8]) -> (PResult<OOB>, RemainingSlice<'a>) {
     (Some(OOB::Reject), cnk)
 }
 
+#[derive(Clone)]
+pub struct Bind<S, F>(pub S, pub F);
+
+pub enum BindState<A,B,S:InterpParser<A>,T:InterpParser<B>> {
+    BindFirst(S::State, Option<<S as InterpParser<A> >::Returning>),
+    BindSecond(T, T::State)
+}
+
+impl<A, B, S : InterpParser<A>, T : InterpParser<B>> InterpParser<(A,B)> for Bind<S, fn(&<S as InterpParser<A>>::Returning) -> Option<T>>
+{
+    type State = BindState<A,B,S,T>;
+    type Returning = <T as InterpParser<B>>::Returning;
+    fn init(&self) -> Self::State {
+        use BindState::*;
+        #[cfg(feature = "logging")]
+        error!("Bind T size: {} {}", core::mem::size_of::<T>(), core::mem::size_of::<T::State>());
+        BindFirst (<S as InterpParser<A>>::init(&self.0), None)
+    }
+
+    #[inline(never)]
+    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        use BindState::*;
+        let mut cursor = chunk;
+        loop {
+            match state {
+                BindFirst(ref mut s, ref mut r) => {
+                    cursor = self.0.parse(s, cursor, r)?;
+                    let next = self.1(r.as_ref().ok_or((Some(OOB::Reject), cursor))?).ok_or((Some(OOB::Reject), cursor))?;
+                    let next_state = next.init();
+                    set_from_thunk(state, || BindSecond(next, next_state));
+                }
+                BindSecond(t, ref mut s) => {
+                    cursor = t.parse(s, cursor, destination)?;
+                    return Ok(cursor);
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct ObserveBytes<X, F, S>(pub fn() -> X, pub F, pub S);
 
 impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<A> for ObserveBytes<X, F, S>
@@ -283,7 +342,7 @@ impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<
                 Some(ref mut subparser_state) => {
                     let new_chunk = <S as InterpParser<A>>::parse(&self.2, subparser_state, chunk, &mut destination.as_mut().ok_or(rej(chunk))?.1)?;
                     self.1(&mut destination.as_mut().ok_or(rej(new_chunk))?.0, &chunk[0..chunk.len()-new_chunk.len()]);
-                    Ok(new_chunk) 
+                    Ok(new_chunk)
                 }
             }
         }
@@ -351,9 +410,10 @@ pub enum LengthFallbackParserState<N, NO, IS> {
     Done
 }
 
-pub struct ObserveLengthedBytes<X, F, S>(pub fn() -> X, pub F, pub S, pub bool);
+#[derive(Clone)]
+pub struct ObserveLengthedBytes<I : Fn () -> X, X, F, S>(pub I, pub F, pub S, pub bool);
 
-impl<N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> InterpParser<LengthFallback<N, I>> for ObserveLengthedBytes<X, F, S> where
+impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> InterpParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S> where
     DefaultInterp : InterpParser<N>,
     usize: TryFrom<<DefaultInterp as InterpParser<N>>::Returning>,
     <DefaultInterp as InterpParser<N>>::Returning: Copy {
@@ -371,7 +431,8 @@ impl<N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> InterpParser
                 Length(ref mut nstate, ref mut length_out) => {
                     cursor = <DefaultInterp as InterpParser<N>>::parse(&DefaultInterp, nstate, cursor, length_out)?;
                     let len = <usize as TryFrom<<DefaultInterp as InterpParser<N>>::Returning>>::try_from(length_out.ok_or(rej(cursor))?).or(Err(rej(cursor)))?;
-                    set_from_thunk(destination, || Some((None, self.0())));
+                    let result = self.0();
+                    set_from_thunk(destination, || Some((None, result)));
                     set_from_thunk(state, || Element(0, len, <S as InterpParser<I>>::init(&self.2)));
                     continue;
                 }
