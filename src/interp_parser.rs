@@ -68,6 +68,12 @@ pub fn set_from_thunk<X, F: FnOnce() -> X>(x: &mut X, f: F) {
     *x = f();
 }
 
+#[inline(never)]
+pub fn set_from_thunk_opt<X, F: FnOnce() -> Option<X>>(x: &mut X, f: F) -> Option<()> {
+    *x = f()?;
+    Some(())
+}
+
 impl InterpParser<Byte> for DefaultInterp {
     type State = ByteState;
     type Returning = u8;
@@ -209,7 +215,7 @@ impl<N, I, S : InterpParser<I>, const M : usize> InterpParser<DArray<N, I, M> > 
                 Elements(ref mut vec, len, ref mut istate, ref mut sub_destination) => {
                     while vec.len() < *len {
                         cursor = self.0.parse(istate, cursor, sub_destination)?;
-                        vec.push(core::mem::take(sub_destination).ok_or((Some(OOB::Reject), cursor))?);
+                        vec.try_push(core::mem::take(sub_destination).ok_or((Some(OOB::Reject), cursor))?).or(Err((Some(OOB::Reject), cursor)))?;
                         *istate = <S as InterpParser<I>>::init(&self.0);
                     }
                     *destination = match core::mem::replace(state, Done) { Elements(vec, _, _, _) => Some(vec), _ => break Err((Some(OOB::Reject), cursor)), };
@@ -305,9 +311,12 @@ impl<A, B, S : InterpParser<A>, T : InterpParser<B>> InterpParser<(A,B)> for Bin
             match state {
                 BindFirst(ref mut s, ref mut r) => {
                     cursor = self.0.parse(s, cursor, r)?;
-                    let next = self.1(r.as_ref().ok_or((Some(OOB::Reject), cursor))?).ok_or((Some(OOB::Reject), cursor))?;
-                    let next_state = next.init();
-                    set_from_thunk(state, || BindSecond(next, next_state));
+                    let r_temp = core::mem::take(r);
+                    set_from_thunk_opt(state, || {
+                        let next = self.1(r_temp.as_ref()?)?;
+                        let next_state = next.init();
+                        Some(BindSecond(next, next_state))
+                    }).ok_or((Some(OOB::Reject), cursor))?;
                 }
                 BindSecond(t, ref mut s) => {
                     cursor = t.parse(s, cursor, destination)?;
