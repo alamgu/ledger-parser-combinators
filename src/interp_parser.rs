@@ -2,8 +2,21 @@ use crate::core_parsers::*;
 use crate::endianness::{Endianness, Convert};
 use arrayvec::ArrayVec;
 
-#[cfg(feature = "logging")]
-use ledger_log::error;
+// #[cfg(feature = "logging")]
+use ledger_log::{error,trace};
+
+#[inline(never)]
+pub fn print_sp() {
+    let mut tmp: usize = 0;
+    unsafe {
+        asm!(
+            "mov {tmp}, sp",
+            tmp = inout(reg) tmp,
+        );
+    }
+    let memory_base = 0x20000000;
+    trace!("Stack pointer: {:?} (0x{:x?})", tmp-memory_base, tmp);
+}
 
 #[derive(PartialEq, Debug)]
 pub enum OOB {
@@ -80,6 +93,7 @@ impl InterpParser<Byte> for DefaultInterp {
     fn init(&self) -> Self::State { Self::State {} }
     #[inline(never)]
     fn parse<'a, 'b>(&self, _state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        print_sp();
         match chunk.split_first() {
             None => Err((None, chunk)),
             Some((first, rest)) => {
@@ -96,6 +110,7 @@ impl InterpParser<Byte> for DropInterp {
     fn init(&self) -> Self::State { () }
     #[inline(never)]
     fn parse<'a, 'b>(&self, _state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        print_sp();
         match chunk.split_first() {
             None => Err((None, chunk)),
             Some((_, rest)) => {
@@ -126,6 +141,7 @@ impl<I, S : InterpParser<I>, const N : usize> InterpParser<Array< I, N>> for Sub
     }
     #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        print_sp();
         let mut remaining : &'a [u8] = chunk;
         while !state.buffer.is_full() {
             match self.0.parse(&mut state.subparser_state, remaining, &mut state.subparser_destination)? {
@@ -156,6 +172,7 @@ macro_rules! number_parser {
             }
             #[inline(never)]
             fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        print_sp();
                 let mut sub_destination : Option<[u8; $size]> = None;
                 let remainder = <DefaultInterp as InterpParser<Array<Byte, $size>>>::parse(&DefaultInterp, state, chunk, &mut sub_destination)?;
                 *destination = Some(Convert::<E>::deserialize((sub_destination.ok_or((Some(OOB::Reject), remainder))?)));
@@ -170,6 +187,7 @@ macro_rules! number_parser {
             }
             #[inline(never)]
             fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        print_sp();
                 let mut sub_destination : Option<[(); $size]> = None;
                 let remainder = <SubInterp<DropInterp> as InterpParser<Array<Byte, $size>>>::parse(&SubInterp(DropInterp), state, chunk, &mut sub_destination)?;
                 *destination = Some(());
@@ -200,6 +218,7 @@ impl<N, I, S : InterpParser<I>, const M : usize> InterpParser<DArray<N, I, M> > 
     }
     #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        print_sp();
         use ForwardDArrayParserState::*;
         let mut cursor : &'a [u8] = chunk;
         loop {
@@ -237,6 +256,7 @@ impl< I, const N : usize >  InterpParser<Array<I, N>> for DefaultInterp where
     }
     #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        print_sp();
         <SubInterp<DefaultInterp> as InterpParser<Array<I, N>>>::parse(&SubInterp(DefaultInterp), state, chunk, destination)
     }
 }
@@ -272,6 +292,7 @@ impl<A, R, S : InterpParser<A>> InterpParser<A> for Action<S, fn(&<S as InterpPa
 
     #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        print_sp();
         let new_chunk = self.0.parse(&mut state.0, chunk, &mut state.1)?;
         match (self.1)(state.1.as_ref().ok_or((Some(OOB::Reject),new_chunk))?, destination) {
             None => { Err((Some(OOB::Reject),new_chunk)) }
@@ -305,6 +326,7 @@ impl<A, B, S : InterpParser<A>, T : InterpParser<B>> InterpParser<(A,B)> for Bin
 
     #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        print_sp();
         use BindState::*;
         let mut cursor = chunk;
         loop {
@@ -341,6 +363,7 @@ impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<
     }
     #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        print_sp();
         loop {
             break match state {
                 None => {
@@ -372,6 +395,7 @@ impl<A : InterpParser<C>, B : InterpParser<D>, C, D> InterpParser<(C, D)> for (A
     }
     #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        print_sp();
         let mut cursor = chunk;
         loop {
             match state {
@@ -433,6 +457,7 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8]
     }
     #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        print_sp();
         use LengthFallbackParserState::*;
         let mut cursor : &'a [u8] = chunk;
         loop {

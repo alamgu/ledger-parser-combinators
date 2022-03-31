@@ -2,6 +2,7 @@
 #![allow(incomplete_features)]
 #![feature(bindings_after_at)]
 #![feature(const_generics)]
+#![feature(asm)]
 
 #![cfg_attr(all(target_os="nanos", test), no_main)]
 #![cfg_attr(target_os="nanos", feature(custom_test_frameworks))]
