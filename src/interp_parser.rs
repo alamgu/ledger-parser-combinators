@@ -69,9 +69,8 @@ pub fn set_from_thunk<X, F: FnOnce() -> X>(x: &mut X, f: F) {
 }
 
 #[inline(never)]
-pub fn set_from_thunk_opt<X, F: FnOnce() -> Option<X>>(x: &mut X, f: F) -> Option<()> {
-    *x = f()?;
-    Some(())
+pub fn call_me_maybe<F: FnOnce() -> Option<()>>(f: F) -> Option<()> {
+    f()
 }
 
 impl InterpParser<Byte> for DefaultInterp {
@@ -312,10 +311,11 @@ impl<A, B, S : InterpParser<A>, T : InterpParser<B>> InterpParser<(A,B)> for Bin
                 BindFirst(ref mut s, ref mut r) => {
                     cursor = self.0.parse(s, cursor, r)?;
                     let r_temp = core::mem::take(r);
-                    set_from_thunk_opt(state, || {
+                    call_me_maybe(|| {
                         let next = self.1(r_temp.as_ref()?)?;
                         let next_state = next.init();
-                        Some(BindSecond(next, next_state))
+                        *state = BindSecond(next, next_state);
+                        Some(())
                     }).ok_or((Some(OOB::Reject), cursor))?;
                 }
                 BindSecond(t, ref mut s) => {
