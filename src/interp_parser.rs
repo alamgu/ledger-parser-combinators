@@ -48,6 +48,11 @@ pub trait InterpParser<P> {
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a>;
 }
 
+pub trait DynInterpParser<P>: InterpParser<P> {
+    type Parameter;
+    fn init_param(&self, params: Self::Parameter, state: &mut Self::State, destination: &mut Option<Self::Returning>);
+}
+
 pub struct DefaultInterp;
 
 pub struct SubInterp<S>(pub S);
@@ -328,6 +333,66 @@ impl<A, B, S : InterpParser<A>, T : InterpParser<B>> InterpParser<(A,B)> for Bin
 }
 
 #[derive(Clone)]
+pub struct DynBind<S, F>(pub S, pub F);
+
+pub enum DynBindState<A,B,S:InterpParser<A>,T:InterpParser<B>> {
+    BindFirst(S::State, Option<<S as InterpParser<A> >::Returning>),
+    BindSecond(T::State)
+}
+
+impl<A, B, S : InterpParser<A>, T : DynInterpParser<B, Parameter = S::Returning>> InterpParser<(A,B)> for DynBind<S, T>
+// fn(&<S as InterpParser<A>>::Returning) -> Option<T>>
+{
+    type State = DynBindState<A,B,S,T>;
+    type Returning = <T as InterpParser<B>>::Returning;
+    fn init(&self) -> Self::State {
+        use DynBindState::*;
+        #[cfg(feature = "logging")]
+        error!("Bind T size: {} {}", core::mem::size_of::<T>(), core::mem::size_of::<T::State>());
+        BindFirst (<S as InterpParser<A>>::init(&self.0), None)
+    }
+
+    #[inline(never)]
+    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        use DynBindState::*;
+        let mut cursor = chunk;
+        loop {
+            match state {
+                BindFirst(ref mut s, ref mut r) => {
+                    cursor = self.0.parse(s, cursor, r)?;
+                    let r_temp = core::mem::take(r);
+                    call_me_maybe(|| {
+                        *state = BindSecond(self.1.init());
+                        match state {
+                            BindSecond(ref mut s) => self.1.init_param(r_temp?, s, destination),
+                            _ => return None,
+                        };
+                        Some(())
+                    }).ok_or((Some(OOB::Reject), cursor))?;
+                }
+                BindSecond(ref mut s) => {
+                    cursor = self.1.parse(s, cursor, destination)?;
+                    return Ok(cursor);
+                }
+            }
+        }
+    }
+}
+
+impl<A, B, S: DynInterpParser<A>, T: DynInterpParser<B, Parameter = S::Returning>> DynInterpParser<(A,B)> for DynBind<S, T>
+    {
+        type Parameter = S::Parameter;
+        #[inline(never)]
+        fn init_param(&self, param: Self::Parameter, state: &mut Self::State, _destination: &mut Option<Self::Returning>) {
+            *state = DynBindState::BindFirst(<S as InterpParser<A>>::init(&self.0), None);
+            match state {
+                DynBindState::BindFirst(ref mut s, ref mut sub_destination) => self.0.init_param(param, s, sub_destination),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+#[derive(Clone)]
 pub struct ObserveBytes<X, F, S>(pub fn() -> X, pub F, pub S);
 
 impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<A> for ObserveBytes<X, F, S>
@@ -357,6 +422,16 @@ impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<
         }
     }
 }
+
+impl<A, X:Clone, F: Fn(&mut X, &[u8])->(), S: InterpParser<A>> DynInterpParser<A> for ObserveBytes<X, F, S>
+    {
+        type Parameter = X;
+        #[inline(never)]
+        fn init_param(&self, param: Self::Parameter, state: &mut Self::State, destination: &mut Option<Self::Returning>) {
+            *destination = Some((param, None));
+            *state = Some(<S as InterpParser<A>>::init(&self.2));
+        }
+    }
 
 pub enum PairState<A, B> {
     Init,
