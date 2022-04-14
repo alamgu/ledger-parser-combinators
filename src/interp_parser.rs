@@ -289,8 +289,13 @@ fn rej<'a>(cnk: &'a [u8]) -> (PResult<OOB>, RemainingSlice<'a>) {
 }
 
 #[derive(Clone)]
+// S is the first subparser to run
+// F is the continuation parser to run, which can depend on the result of S
 pub struct Bind<S, F>(pub S, pub F);
 
+// Initially the state is the state of the first subparser, and its result location
+// After the first subparser runs, if it failed, then the whole bind parser will fail
+// but if it succeeds, then the parser state transitions to BindSecond.
 pub enum BindState<A,B,S:InterpParser<A>,T:InterpParser<B>> {
     BindFirst(S::State, Option<<S as InterpParser<A> >::Returning>),
     BindSecond(T, T::State)
@@ -494,6 +499,70 @@ pub enum LengthFallbackParserState<N, NO, IS> {
     Done
 }
 
+// First step, sketch out the states of your parser, with your transitions in mind
+pub struct LengthLimitedState<State> {
+    bytes_seen : usize,
+    child_state : State,
+}
+
+// Now define the parser type, which will resemble the mirror image of the state
+#[derive(Clone)]
+pub struct LengthLimited<S> {
+    bytes_limit : usize,
+    subparser : S
+}
+
+// Implement InterpParser for the parser
+impl<I, S : InterpParser<I>> InterpParser<I> for LengthLimited<S> {
+    type State=LengthLimitedState<<S as InterpParser<I>>::State>;
+    type Returning = (<S as InterpParser<I>>::Returning);
+    // Init is usually fairly straightforward
+    fn init(&self) -> Self::State {
+        LengthLimitedState {
+            bytes_seen: 0,
+            child_state: self.subparser.init()
+        }
+    }
+    // Start by typing out the type signature, copying the input slice into a mutable reference
+    // and successfully return the cursor. Elaborate on the parser from there.
+    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        let feed_amount = core::cmp::min(chunk.len(), self.bytes_limit - state.bytes_seen);
+        // If you're calling a subparser, you will probably want to match on its status
+        // Note that we are trying to keep _our_ state in lockstep with the state of our child.
+        // If the child consumes, we account for it, even if we end up in a bad state.
+        match self.subparser.parse(&mut state.child_state, &chunk[0..feed_amount], destination) {
+            Ok(new_cursor) => {
+                let consumed = feed_amount - new_cursor.len();
+                state.bytes_seen += consumed;
+                // If our child has accepted, they better have eaten all their vegetables.
+                if consumed < feed_amount || state.bytes_seen < self.bytes_limit {
+                    return Err((Some (OOB::Reject), new_cursor));
+                }
+                return Ok(&chunk[feed_amount..chunk.len()]);
+            }
+            Err((None, new_cursor)) => {
+                let consumed = feed_amount - new_cursor.len();
+                state.bytes_seen += consumed;
+                // How can you have any pudding if you don't eat your meat?
+                if consumed < feed_amount || state.bytes_seen >= self.bytes_limit {
+                    return Err((Some (OOB::Reject), new_cursor));
+                }
+                Err((None, new_cursor))
+            }
+            Err((w, new_cursor)) => {
+                let consumed = feed_amount - new_cursor.len();
+                state.bytes_seen += consumed;
+                Err((w, new_cursor))
+            }
+        }
+    }
+}
+
+// I is a closure to initialize the observer of the input, namely X, which is usually a hasher
+// F is a method which does the observing for the observer.
+// S is the parser for the input of the hasher from the raw input
+// Note that ObserveLengthedBytes also consumes a length prefix from the raw input
+// Confer: LengthFallback
 #[derive(Clone)]
 pub struct ObserveLengthedBytes<I : Fn () -> X, X, F, S>(pub I, pub F, pub S, pub bool);
 
