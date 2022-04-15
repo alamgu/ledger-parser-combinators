@@ -263,6 +263,9 @@ impl< N, I, const M : usize> InterpParser<DArray<N, I, M>> for DefaultInterp whe
 */
 
 // Action is essentailly an fmap that can fail.
+// We _could_ constraint F to actually be an fn(..) -> Option<()> to improve error messages when
+// functions do not have the correct shape, but that reduces our ability to write different
+// instances later.
 #[derive(Clone)]
 pub struct Action<S, F>(pub S, pub F);
 
@@ -283,6 +286,17 @@ impl<A, R, S : InterpParser<A>> InterpParser<A> for Action<S, fn(&<S as InterpPa
         }
     }
 }
+
+impl<A, R, S : DynInterpParser<A>> DynInterpParser<A> for Action<S, fn(&<S as InterpParser<A>>::Returning, &mut Option<R>) -> Option<()>>
+    {
+        type Parameter = S::Parameter;
+        #[inline(never)]
+        fn init_param(&self, param: Self::Parameter, state: &mut Self::State, _destination: &mut Option<Self::Returning>) {
+            state.0 = <S as InterpParser<A>>::init(&self.0);
+            state.1 = None;
+            self.0.init_param(param, &mut state.0, &mut state.1);
+        }
+    }
 
 fn rej<'a>(cnk: &'a [u8]) -> (PResult<OOB>, RemainingSlice<'a>) {
     (Some(OOB::Reject), cnk)
@@ -515,7 +529,7 @@ pub struct LengthLimited<S> {
 // Implement InterpParser for the parser
 impl<I, S : InterpParser<I>> InterpParser<I> for LengthLimited<S> {
     type State=LengthLimitedState<<S as InterpParser<I>>::State>;
-    type Returning = (<S as InterpParser<I>>::Returning);
+    type Returning = <S as InterpParser<I>>::Returning;
     // Init is usually fairly straightforward
     fn init(&self) -> Self::State {
         LengthLimitedState {
@@ -584,8 +598,16 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8]
                 Length(ref mut nstate, ref mut length_out) => {
                     cursor = <DefaultInterp as InterpParser<N>>::parse(&DefaultInterp, nstate, cursor, length_out)?;
                     let len = <usize as TryFrom<<DefaultInterp as InterpParser<N>>::Returning>>::try_from(length_out.ok_or(rej(cursor))?).or(Err(rej(cursor)))?;
-                    let result = self.0();
-                    set_from_thunk(destination, || Some((None, result)));
+                    match destination {
+                      None => {
+                          call_me_maybe(|| {
+                          let result = self.0();
+                          *destination = Some((None, result));
+                          Some(())
+                          }).ok_or(rej(cursor))?;
+                      }
+                      _ => { }
+                    }
                     set_from_thunk(state, || Element(0, len, <S as InterpParser<I>>::init(&self.2)));
                     continue;
                 }
@@ -650,6 +672,18 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8]
         }
     }
 }
+
+impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> DynInterpParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S> where
+    DefaultInterp : InterpParser<N>,
+    usize: TryFrom<<DefaultInterp as InterpParser<N>>::Returning>,
+    <DefaultInterp as InterpParser<N>>::Returning: Copy {
+        type Parameter = X;
+        #[inline(never)]
+        fn init_param(&self, param: Self::Parameter, state: &mut Self::State, destination: &mut Option<Self::Returning>) {
+            *destination = Some((None, param));
+            *state = LengthFallbackParserState::Length(<DefaultInterp as InterpParser<N>>::init(&DefaultInterp), None)
+        }
+    }
 
     pub struct DBG;
     use core;
