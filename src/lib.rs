@@ -8,6 +8,10 @@
 #![reexport_test_harness_main = "test_main"]
 #![cfg_attr(target_os="nanos", test_runner(nanos_sdk::sdk_test_runner))]
 
+#[macro_use]
+extern crate enum_init;
+
+
 //#[cfg(all(not(target_os = "linux"), test))]
 //use nanos_sdk::exit_app;
 #[cfg(all(not(target_os = "linux"), test))]

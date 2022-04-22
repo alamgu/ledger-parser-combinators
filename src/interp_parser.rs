@@ -45,6 +45,9 @@ pub trait InterpParser<P> {
     type State;
     type Returning;
     fn init(&self) -> Self::State;
+    fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
+        unsafe { (*state).as_mut_ptr().write(self.init()); }
+    }
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a>;
 }
 
@@ -75,6 +78,10 @@ pub fn set_from_thunk<X, F: FnOnce() -> X>(x: &mut X, f: F) {
 
 #[inline(never)]
 pub fn call_me_maybe<F: FnOnce() -> Option<()>>(f: F) -> Option<()> {
+    f()
+}
+#[inline(never)]
+pub fn call_me_maybe2<F: FnOnce() -> Option<()>>(f: F) -> Option<()> {
     f()
 }
 
@@ -273,8 +280,16 @@ impl<A, R, S : InterpParser<A>> InterpParser<A> for Action<S, fn(&<S as InterpPa
 {
     type State = (<S as InterpParser<A> >::State, Option<<S as InterpParser<A> >::Returning>);
     type Returning = R;
+    
+    #[inline(never)]
     fn init(&self) -> Self::State {
         (<S as InterpParser<A>>::init(&self.0), None)
+    }
+
+    #[inline(never)]
+    fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
+       self.0.init_in_place(unsafe { core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).0) as *mut core::mem::MaybeUninit<<S as InterpParser<A> >::State> });
+       call_fn( || unsafe { (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).1) as *mut Option<<S as InterpParser<A> >::Returning> ).write(None)} );
     }
 
     #[inline(never)]
@@ -310,20 +325,26 @@ pub struct Bind<S, F>(pub S, pub F);
 // Initially the state is the state of the first subparser, and its result location
 // After the first subparser runs, if it failed, then the whole bind parser will fail
 // but if it succeeds, then the parser state transitions to BindSecond.
+#[derive(InPlaceInit)]
 pub enum BindState<A,B,S:InterpParser<A>,T:InterpParser<B>> {
     BindFirst(S::State, Option<<S as InterpParser<A> >::Returning>),
-    BindSecond(T, T::State)
+    BindSecond(T, <T as InterpParser<B>>::State)
 }
 
 impl<A, B, S : InterpParser<A>, T : InterpParser<B>> InterpParser<(A,B)> for Bind<S, fn(&<S as InterpParser<A>>::Returning) -> Option<T>>
 {
     type State = BindState<A,B,S,T>;
     type Returning = <T as InterpParser<B>>::Returning;
+    #[inline(never)]
     fn init(&self) -> Self::State {
         use BindState::*;
         #[cfg(feature = "logging")]
         error!("Bind T size: {} {}", core::mem::size_of::<T>(), core::mem::size_of::<T::State>());
         BindFirst (<S as InterpParser<A>>::init(&self.0), None)
+    }
+
+    fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
+        Self::State::init_bind_first(state, |a| <S as InterpParser<A>>::init_in_place(&self.0, a), |b| call_fn( || unsafe { (*b).as_mut_ptr().write(None); }));
     }
 
     #[inline(never)]
@@ -354,9 +375,20 @@ impl<A, B, S : InterpParser<A>, T : InterpParser<B>> InterpParser<(A,B)> for Bin
 #[derive(Clone)]
 pub struct DynBind<S, F>(pub S, pub F);
 
+#[derive(InPlaceInit)]
+#[repr(u8)]
 pub enum DynBindState<A,B,S:InterpParser<A>,T:InterpParser<B>> {
     BindFirst(S::State, Option<<S as InterpParser<A> >::Returning>),
-    BindSecond(T::State)
+    BindSecond(<T as InterpParser<B>>::State)
+}
+
+#[inline(never)]
+fn call_fn(f: impl FnOnce()) {
+    f()
+}
+#[inline(never)]
+fn call_fn2(f: impl FnOnce()) {
+    f()
 }
 
 impl<A, B, S : InterpParser<A>, T : DynInterpParser<B, Parameter = S::Returning>> InterpParser<(A,B)> for DynBind<S, T>
@@ -364,11 +396,17 @@ impl<A, B, S : InterpParser<A>, T : DynInterpParser<B, Parameter = S::Returning>
 {
     type State = DynBindState<A,B,S,T>;
     type Returning = <T as InterpParser<B>>::Returning;
+    #[inline(never)]
     fn init(&self) -> Self::State {
         use DynBindState::*;
         #[cfg(feature = "logging")]
         error!("Bind T size: {} {}", core::mem::size_of::<T>(), core::mem::size_of::<T::State>());
         BindFirst (<S as InterpParser<A>>::init(&self.0), None)
+    }
+    
+    #[inline(never)]
+    fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
+        Self::State::init_bind_first(state, |a| call_fn2(|| <S as InterpParser<A>>::init_in_place(&self.0, a)), |b| call_fn2(|| unsafe { (*b).as_mut_ptr().write(None); }));
     }
 
     #[inline(never)]
@@ -379,14 +417,28 @@ impl<A, B, S : InterpParser<A>, T : DynInterpParser<B, Parameter = S::Returning>
             match state {
                 BindFirst(ref mut s, ref mut r) => {
                     cursor = self.0.parse(s, cursor, r)?;
-                    let r_temp = core::mem::take(r);
                     call_me_maybe(|| {
-                        *state = BindSecond(self.1.init());
-                        match state {
-                            BindSecond(ref mut s) => self.1.init_param(r_temp?, s, destination),
-                            _ => return None,
-                        };
+                        let r_temp;
+                        if let BindFirst(_, ref mut r) = state {
+                            r_temp = core::mem::take(r)?;
+                        } else {
+                            unreachable!();
+                        }
+                        Self::State::init_bind_second(unsafe { core::mem::transmute(state as *mut Self::State) }, |a| call_fn(|| self.1.init_in_place(a)));
+                        if let BindSecond(ref mut s) = state {
+                            self.1.init_param(r_temp, s, destination);
+                        } else {
+                            unreachable!();
+                        }
                         Some(())
+                        /* call_me_maybe2(|| {
+                            // *state = BindSecond(self.1.init());
+                            match state {
+                                BindSecond(ref mut s) => call_fn(|| self.1.init_param(r_temp, s, destination)),
+                                _ => return None,
+                            };
+                            Some(())
+                        })*/
                     }).ok_or((Some(OOB::Reject), cursor))?;
                 }
                 BindSecond(ref mut s) => {
@@ -403,7 +455,8 @@ impl<A, B, S: DynInterpParser<A>, T: DynInterpParser<B, Parameter = S::Returning
         type Parameter = S::Parameter;
         #[inline(never)]
         fn init_param(&self, param: Self::Parameter, state: &mut Self::State, _destination: &mut Option<Self::Returning>) {
-            *state = DynBindState::BindFirst(<S as InterpParser<A>>::init(&self.0), None);
+            self.init_in_place(unsafe { core::mem::transmute(state as *mut Self::State) });
+            // *state = DynBindState::BindFirst(<S as InterpParser<A>>::init(&self.0), None);
             match state {
                 DynBindState::BindFirst(ref mut s, ref mut sub_destination) => self.0.init_param(param, s, sub_destination),
                 _ => unreachable!(),
@@ -420,6 +473,7 @@ impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<
     // Making a compromise here; if we return our sub-parser's result still wrapped in Option, we
     // can avoid storing it in our own state and then copying.
     type Returning = (X, Option<<S as InterpParser<A>>::Returning>);
+    #[inline(never)]
     fn init(&self) -> Self::State {
         None
     }
@@ -461,6 +515,7 @@ pub enum PairState<A, B> {
 impl<A : InterpParser<C>, B : InterpParser<D>, C, D> InterpParser<(C, D)> for (A, B) {
     type State = PairState<<A as InterpParser<C>>::State, <B as InterpParser<D>>::State>;
     type Returning = (Option<A::Returning>, Option<B::Returning>);
+    #[inline(never)]
     fn init(&self) -> Self::State {
         PairState::Init
     }
@@ -506,6 +561,7 @@ macro_rules! def_table {
 }
 */
 
+#[derive(InPlaceInit)]
 pub enum LengthFallbackParserState<N, NO, IS> {
     Length(N, NO),
     Element(usize, usize, IS),
@@ -586,8 +642,13 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8]
     <DefaultInterp as InterpParser<N>>::Returning: Copy {
     type State=LengthFallbackParserState<<DefaultInterp as InterpParser<N>>::State, Option<<DefaultInterp as InterpParser<N>>::Returning>, <S as InterpParser<I>>::State>;
     type Returning = (Option<<S as InterpParser<I>>::Returning>, X);
+    #[inline(never)]
     fn init(&self) -> Self::State {
         LengthFallbackParserState::Length(<DefaultInterp as InterpParser<N>>::init(&DefaultInterp), None)
+    }
+    #[inline(never)]
+    fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
+        Self::State::init_length(state, |a| <DefaultInterp as InterpParser<N>>::init_in_place(&DefaultInterp, a), |b| call_fn( || unsafe { (*b).as_mut_ptr().write(None); }));
     }
     #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
@@ -600,11 +661,11 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8]
                     let len = <usize as TryFrom<<DefaultInterp as InterpParser<N>>::Returning>>::try_from(length_out.ok_or(rej(cursor))?).or(Err(rej(cursor)))?;
                     match destination {
                       None => {
-                          call_me_maybe(|| {
+                          /*call_me_maybe(|| {
                           let result = self.0();
                           *destination = Some((None, result));
                           Some(())
-                          }).ok_or(rej(cursor))?;
+                          }).ok_or(rej(cursor))?;*/
                       }
                       _ => { }
                     }
