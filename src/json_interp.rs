@@ -727,6 +727,55 @@ impl<T, S: JsonInterp<T>, RV: Debug + Summable<<S as ParserCommon<T>>::Returning
 }
 
 
+pub struct Enumerated<S, RV = ()>(S, core::marker::PhantomData<RV>);
+
+impl<S, RV> Enumerated<S, RV> {
+    pub const fn new(s: S) -> Self { Enumerated(s, core::marker::PhantomData) }
+}
+
+impl<T, S: DynParser<T, Parameter = u16>, RV: Debug + Summable<<S as ParserCommon<T>>::Returning>> ParserCommon<JsonArray<T>> for Enumerated<S, RV> {
+    type State = (u16, JsonArrayDropState<<S as ParserCommon<T>>::State, <S as ParserCommon<T>>::Returning>);
+    type Returning = RV;
+    fn init(&self) -> Self::State { (0, JsonArrayDropState::Start) }
+}
+
+impl<T, S: JsonInterp<T> + DynParser<T, Parameter = u16>, RV: Debug + Summable<<S as ParserCommon<T>>::Returning>> JsonInterp<JsonArray<T>> for Enumerated<S, RV> {
+    #[inline(never)]
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        use JsonArrayDropState::*;
+        use JsonToken::*;
+        let st = (&mut state.1, token);
+        let ix = &mut state.0;
+        loop {
+            match st {
+                (Start, BeginArray) => { *destination=Some(Summable::zero()); set_from_thunk(st.0, || First); }
+                (First, EndArray) => { return Ok(()) }
+                (First, _) => {
+                    set_from_thunk(st.0, || Item(<S as ParserCommon<T>>::init(&self.0), None));
+                    continue;
+                }
+                (Item(ref mut s, ref mut sub_destination), tok) => {
+                    <S as DynParser<T>>::init_param(&self.0,*ix, s, sub_destination);
+                    <S as JsonInterp<T>>::parse(&self.0, s, tok, sub_destination)?;
+                    #[cfg(feature = "logging")]
+                    trace!("destination {:?}", destination);
+                    destination.as_mut().ok_or(Some(OOB::Reject))?.add_and_set(sub_destination.as_ref().ok_or(Some(OOB::Reject))?);
+                    set_from_thunk(st.0, || AfterValue);
+                }
+                (AfterValue, ValueSeparator) => {
+                    *ix+=1;
+                    set_from_thunk(st.0, || Item(<S as ParserCommon<T>>::init(&self.0), None));
+                }
+                (AfterValue, EndArray) => { return Ok(()) }
+                _ => {
+                    return Err(Some(OOB::Reject))
+                }
+            };
+            return Err(None)
+        }
+    }
+}
+
 pub struct AccumulateArray<ItemInterp, const N: usize>(pub ItemInterp);
 
 impl<T, S: ParserCommon<T>, const N: usize> ParserCommon<JsonArray<T>> for AccumulateArray<S, N>
@@ -764,6 +813,13 @@ impl<T, S: JsonInterp<T>, const N: usize> JsonInterp<JsonArray<T>> for Accumulat
             };
             return Err(None)
         }
+    }
+}
+
+impl<A, S: JsonInterp<A>, P> JsonInterp<A> for ParamPass<S, P> {
+    #[inline(never)]
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        <S as JsonInterp<A>>::parse(&self.0, state, token, &mut destination.as_mut().ok_or(Some(OOB::Reject))?.0)
     }
 }
 

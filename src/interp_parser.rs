@@ -4,6 +4,8 @@ use arrayvec::ArrayVec;
 
 #[cfg(feature = "logging")]
 use ledger_log::error;
+#[cfg(feature = "logging")]
+use ledger_log::trace;
 
 #[derive(PartialEq, Debug)]
 pub enum OOB {
@@ -351,6 +353,42 @@ impl<A, S: InterpParser<A>> InterpParser<A> for Preaction<S> {
         }}
     }
 }
+
+pub struct ParamPass<S, P>(pub S, core::marker::PhantomData<P>);
+
+impl<S, P> ParamPass<S, P> {
+    pub const fn new(s: S) -> Self { ParamPass(s, core::marker::PhantomData) }
+}
+
+impl<A, S: ParserCommon<A>, P> ParserCommon<A> for ParamPass<S, P> {
+    type State = <S as ParserCommon<A>>::State;
+    type Returning = (Option<<S as ParserCommon<A>>::Returning>, P);
+
+    fn init(&self) -> Self::State { <S as ParserCommon<A>>::init(&self.0) }
+}
+
+impl<A, S: InterpParser<A>, P> InterpParser<A> for ParamPass<S, P> {
+    #[inline(never)]
+    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        <S as InterpParser<A>>::parse(&self.0, state, chunk, &mut destination.as_mut().ok_or(rej(chunk))?.0)
+    }
+}
+
+impl<A, S: ParserCommon<A>, P: core::fmt::Debug> DynParser<A> for ParamPass<S, P>
+{
+    type Parameter = P;
+    #[inline(never)]
+    fn init_param(&self, param: Self::Parameter, _state: &mut Self::State, destination: &mut Option<Self::Returning>) {
+        #[cfg(feature = "logging")]
+        trace!("ParamPass init_param {:?}", param);
+        match destination {
+            None => { set_from_thunk(destination, || Some((None, param))) }
+            _ => {}
+        }
+    }
+}
+
+
 
 #[derive(Clone)]
 // S is the first subparser to run
