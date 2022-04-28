@@ -65,6 +65,9 @@ pub trait JsonInterp<S> {
     type State;
     type Returning;
     fn init(&self) -> Self::State;
+    fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
+        unsafe { (*state).as_mut_ptr().write(self.init()); }
+    }
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>>;
 }
 
@@ -245,6 +248,10 @@ impl<T, S : JsonInterp<T>> InterpParser<Json<T>> for Json<S> {
 
     fn init(&self) -> Self::State {
         (JsonTokenizerState::Value, <S as JsonInterp<T>>::init(&self.0))
+    }
+    fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
+        unsafe { (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).0) as *mut JsonTokenizerState).write(JsonTokenizerState::Value); }
+        self.0.init_in_place(unsafe { core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).0) as *mut core::mem::MaybeUninit<<S as JsonInterp<T> >::State> });
     }
     #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
