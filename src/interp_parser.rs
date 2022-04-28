@@ -51,7 +51,7 @@ pub trait InterpParser<P>: ParserCommon<P> {
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a>;
 }
 
-pub trait DynInterpParser<P>: InterpParser<P> {
+pub trait DynParser<P>: ParserCommon<P> {
     type Parameter;
     fn init_param(&self, params: Self::Parameter, state: &mut Self::State, destination: &mut Option<Self::Returning>);
 }
@@ -316,7 +316,7 @@ impl<A, R, S : InterpParser<A>> InterpParser<A> for Action<S, fn(&<S as ParserCo
     }
 }
 
-impl<A, R, S : DynInterpParser<A>> DynInterpParser<A> for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
+impl<A, R, S : DynParser<A>> DynParser<A> for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
     {
         type Parameter = S::Parameter;
         #[inline(never)]
@@ -414,7 +414,7 @@ pub enum DynBindState<A,B,S:ParserCommon<A>,T:ParserCommon<B>> {
     BindSecond(T::State)
 }
 
-impl<A, B, S : ParserCommon<A>, T : DynInterpParser<B, Parameter = S::Returning>> ParserCommon<(A,B)> for DynBind<S, T>
+impl<A, B, S : ParserCommon<A>, T : DynParser<B, Parameter = S::Returning>> ParserCommon<(A,B)> for DynBind<S, T>
 // fn(&<S as InterpParser<A>>::Returning) -> Option<T>>
 {
     type State = DynBindState<A,B,S,T>;
@@ -427,7 +427,7 @@ impl<A, B, S : ParserCommon<A>, T : DynInterpParser<B, Parameter = S::Returning>
     }
 }
 
-impl<A, B, S : InterpParser<A>, T : DynInterpParser<B, Parameter = S::Returning>> InterpParser<(A,B)> for DynBind<S, T>
+impl<A, B, S : InterpParser<A>, T : InterpParser<B> + DynParser<B, Parameter = S::Returning>> InterpParser<(A,B)> for DynBind<S, T>
 {
     #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
@@ -456,7 +456,7 @@ impl<A, B, S : InterpParser<A>, T : DynInterpParser<B, Parameter = S::Returning>
     }
 }
 
-impl<A, B, S: DynInterpParser<A>, T: DynInterpParser<B, Parameter = S::Returning>> DynInterpParser<(A,B)> for DynBind<S, T>
+impl<A, B, S: DynParser<A>, T: DynParser<B, Parameter = S::Returning>> DynParser<(A,B)> for DynBind<S, T>
     {
         type Parameter = S::Parameter;
         #[inline(never)]
@@ -504,7 +504,7 @@ impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<
     }
 }
 
-impl<A, X:Clone, F: Fn(&mut X, &[u8])->(), S: InterpParser<A>> DynInterpParser<A> for ObserveBytes<X, F, S>
+impl<A, X:Clone, F: Fn(&mut X, &[u8])->(), S: InterpParser<A>> DynParser<A> for ObserveBytes<X, F, S>
     {
         type Parameter = X;
         #[inline(never)]
@@ -747,7 +747,7 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8]
     }
 }
 
-impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> DynInterpParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S> where
+impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> DynParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S> where
     DefaultInterp : InterpParser<N>,
     usize: TryFrom<<DefaultInterp as ParserCommon<N>>::Returning>,
     <DefaultInterp as ParserCommon<N>>::Returning: Copy {
