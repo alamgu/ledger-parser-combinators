@@ -1121,8 +1121,6 @@ mod tests {
 
 
 
-pub struct Preaction<S>(pub fn() -> Option<()>, pub S);
-
 impl<A, S: JsonInterp<A>> JsonInterp<A> for Preaction<S> {
     type State = Option<<S as JsonInterp<A>>::State>;
     type Returning = <S as JsonInterp<A>>::Returning;
