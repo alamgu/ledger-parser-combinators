@@ -321,8 +321,6 @@ impl<A, R, S : DynParser<A>> DynParser<A> for Action<S, fn(&<S as ParserCommon<A
         type Parameter = S::Parameter;
         #[inline(never)]
         fn init_param(&self, param: Self::Parameter, state: &mut Self::State, _destination: &mut Option<Self::Returning>) {
-            state.0 = <S as ParserCommon<A>>::init(&self.0);
-            state.1 = None;
             self.0.init_param(param, &mut state.0, &mut state.1);
         }
     }
