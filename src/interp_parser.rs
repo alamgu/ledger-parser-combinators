@@ -3,7 +3,7 @@ use crate::endianness::{Endianness, Convert};
 use arrayvec::ArrayVec;
 
 #[cfg(feature = "logging")]
-use ledger_log::{trace,error};
+use ledger_log::{error};
 
 #[derive(PartialEq, Debug)]
 pub enum OOB {
@@ -794,7 +794,8 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> 
                 }
                 Failed(ref mut consumed, len) => {
                     if self.3 {
-                        write!(DBG, "We hit a failed state in the parser\n").or(Err(rej(cursor)))?;
+                        #[cfg(feature = "logging")]
+                        error!("We hit a failed state in the parser and strict parsing is enabled.");
                         return Err((Some(OOB::Reject), cursor));
                     } else {
                         use core::cmp::min;
@@ -828,23 +829,6 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> 
             set_from_thunk(destination, || { Some((None, param)) });
             // *destination = Some((None, param.clone()));
             *state = LengthFallbackParserState::Length(<DefaultInterp as InterpParser<N>>::init(&DefaultInterp), None)
-        }
-    }
-
-    pub struct DBG;
-    use core;
-    #[allow(unused_imports)]
-    use core::fmt::Write;
-    impl core::fmt::Write for DBG {
-        fn write_str(&mut self, s: &str) -> core::fmt::Result {
-            use arrayvec::ArrayString;
-            let mut qq = ArrayString::<128>::new();
-            qq.push_str(s);
-            #[cfg(target_os="nanos")]
-            nanos_sdk::debug_print(qq.as_str());
-            #[cfg(not(target_os="nanos"))]
-            std::print!("{}", qq.as_str());
-            Ok(())
         }
     }
 
