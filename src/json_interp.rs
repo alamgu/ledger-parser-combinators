@@ -726,6 +726,52 @@ impl<T, S: JsonInterp<T>, RV: Debug + Summable<<S as ParserCommon<T>>::Returning
     }
 }
 
+// This achieves foldr' by feeding back the RV to the subparser as the Parameter
+pub struct SubInterpMFold<S, RV = ()>(S, core::marker::PhantomData<RV>);
+
+impl<S, RV> SubInterpMFold<S, RV> {
+    pub const fn new(s: S) -> Self { SubInterpMFold(s, core::marker::PhantomData) }
+}
+
+impl<T, S: ParserCommon<T>, RV: Debug + Summable<<S as ParserCommon<T>>::Returning>> ParserCommon<JsonArray<T>> for SubInterpMFold<S, RV> {
+    type State = JsonArrayDropState<<S as ParserCommon<T>>::State, <S as ParserCommon<T>>::Returning>;
+    type Returning = RV;
+    fn init(&self) -> Self::State { JsonArrayDropState::Start }
+}
+
+impl<T, S: JsonInterp<T> + DynParser<T, Parameter = RV>, RV: Copy + Debug + Summable<<S as ParserCommon<T>>::Returning>> JsonInterp<JsonArray<T>> for SubInterpMFold<S, RV> {
+    #[inline(never)]
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        use JsonArrayDropState::*;
+        use JsonToken::*;
+        let st = (state, token);
+        loop {
+            match st {
+                (Start, BeginArray) => { *destination=Some(Summable::zero()); set_from_thunk(st.0, || First); }
+                (First, EndArray) => { return Ok(()) }
+                (First, _) => {
+                    set_from_thunk(st.0, || Item(<S as ParserCommon<T>>::init(&self.0), None));
+                    continue;
+                }
+                (Item(ref mut s, ref mut sub_destination), tok) => {
+                    <S as DynParser<T>>::init_param(&self.0,destination.ok_or(Some(OOB::Reject))?, s, sub_destination);
+                    <S as JsonInterp<T>>::parse(&self.0, s, tok, sub_destination)?;
+                    #[cfg(feature = "logging")]
+                    trace!("destination {:?}", destination);
+                    destination.as_mut().ok_or(Some(OOB::Reject))?.add_and_set(sub_destination.as_ref().ok_or(Some(OOB::Reject))?);
+                    set_from_thunk(st.0, || AfterValue);
+                }
+                (AfterValue, ValueSeparator) => { set_from_thunk(st.0, || Item(<S as ParserCommon<T>>::init(&self.0), None)); }
+                (AfterValue, EndArray) => { return Ok(()) }
+                _ => {
+                    return Err(Some(OOB::Reject))
+                }
+            };
+            return Err(None)
+        }
+    }
+}
+
 
 pub struct Enumerated<S, RV = ()>(S, core::marker::PhantomData<RV>);
 
