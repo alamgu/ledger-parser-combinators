@@ -929,6 +929,17 @@ impl<A, R, S : JsonInterp<A>> JsonInterp<A> for Action<S, fn(&<S as ParserCommon
     }
 }
 
+impl<A, R, S : JsonInterp<A>, C> JsonInterp<A> for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>, C) -> Option<()>> {
+    #[inline(never)]
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        self.0.parse(&mut state.0, token, &mut state.1)?;
+        match (self.1)(state.1.as_ref().ok_or(Some(OOB::Reject))?, destination, core::mem::take(&mut state.2).ok_or(Some(OOB::Reject))?) {
+            None => { Err(Some(OOB::Reject)) }
+            Some(()) => { Ok(()) }
+        }
+    }
+}
+
 pub struct JsonStringAccumulate<const N : usize>;
 
 #[derive(Debug)]
