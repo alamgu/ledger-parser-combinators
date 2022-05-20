@@ -39,7 +39,7 @@ impl<A:Summable<C>, B: Summable<D>, C, D> Summable<(C,D)> for (A, B) {
     fn zero() -> Self { (Summable::<C>::zero(), Summable::<D>::zero()) }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Count(pub u64);
 
 impl<A> Summable<A> for Count {
@@ -49,7 +49,7 @@ impl<A> Summable<A> for Count {
     fn zero() -> Self { Count(0) }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct All(pub bool);
 
 impl Summable<bool> for All {
