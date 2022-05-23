@@ -1,10 +1,29 @@
+//! The parsers in interp_parser divide "Schema" from "Interpretation".
+//!
+//! The core trait is [InterpParser], and that together with [DynInterpParser] form the public
+//! interface of this module.
+//!
+//! Schema in this context describes the structure of the input; the "one byte of length and then
+//! up to ten 32-bit numbers" part.
+//!
+//! Interpretation is then what we want to _do_ with the input; for ledger apps, this is usually
+//! "cache it for a moment to prompt", "prompt for the return values of these sub-parsers" or
+//! "forget it", corresponding to DefaultInterp, Action, and DropInterp.
+//!
+//! Arrays of values in the input we usually don't want to cache, as that would require either a
+//! limit or non-constant memory; for those we handle them piece by piece with SubInterp.
 use crate::core_parsers::*;
 use crate::endianness::{Endianness, Convert};
 use arrayvec::ArrayVec;
 
+pub use crate::interp::*;
+
 #[cfg(feature = "logging")]
 use ledger_log::{trace,error};
 
+
+/// Out-Of-Band messages; currently only Reject, but could plausibly be used to do prompts in a
+/// co-routine way.
 #[derive(PartialEq, Debug)]
 pub enum OOB {
     // Prompt removed due to excessive memory use; we gain testability improvements if we can
@@ -15,20 +34,24 @@ pub enum OOB {
     Reject
 }
 
-// PResult stands for Partial Result
-// None = Incomplete
+/// PResult stands for Partial Result
+/// None = Incomplete
 pub type PResult<T> = Option<T>;
 
-// This represents the part of the input that hasn't been yet consumed by the
-// parser, represented as a slice of the input.
+/// This represents the part of the input that hasn't been yet consumed by the
+/// parser, represented as a slice of the input.
 pub type RemainingSlice<'a> = &'a [u8];
 
-// If the parser does its job correctly, we just need to return the remaining
-// slice. If the parser still needs data, it will return a None (and in that
-// case the remaining slice is empty because we consumed it all). If the parser
-// encounters an error condition, it will signal it in the OOB type, and we'll
-// return the remaining slice for further elaboration or resuming.
+
+/// Return type for a parser.
+///
+/// If the parser completes its job correctly, we just need to return the remaining
+/// slice. If the parser still needs data, it will return a None (and in that
+/// case the remaining slice is empty because we consumed it all). If the parser
+/// encounters an error condition, it will signal it in the OOB type, and we'll
+/// return the remaining slice for further elaboration or resuming.
 pub type ParseResult<'a> = Result<RemainingSlice<'a>, (PResult<OOB>, RemainingSlice<'a>)>;
+
 
 pub fn reject<'a, R>(chunk: &'a [u8]) -> Result<R, (PResult<OOB>, &'a [u8])> {
     Err((Some(OOB::Reject), chunk))
@@ -41,6 +64,18 @@ pub fn need_more<'a, R>(chunk: &'a [u8]) -> Result<R, (PResult<OOB>, &'a [u8])> 
 // Core trait; describes an "interpretation" of a given datatype (specified with the types from
 // core_parsers), which can have a variable return type and do stateful actions.
 
+/// An InterpParser provides an actual parser between a schema `P` by interpretation mechanism
+/// `Self`.
+///
+/// To use, first create a variable of type `State` by `init`, and initialize a destination to
+/// None; and then repeatedly call `parse` with chunks of input until the result is `Ok(())`; at
+/// that point destination will be filled. destination may become non-None at any point during the
+/// parse, and should be a stable location.
+///
+/// For better memory usage during initialization in most cases, instead of using `init` declare a
+/// `MaybeUninit` variable and use `init_in_place` to construct a state in it, then convert it to
+/// `State`.
+
 pub trait InterpParser<P> {
     type State;
     type Returning;
@@ -51,18 +86,16 @@ pub trait InterpParser<P> {
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a>;
 }
 
+/// DynInterpParser extends InterpParser by adding a method to set a parameter into the parser
+/// as part of initialization.
+///
+/// This is mostly useful to avoid duplication of memory when implementing DynBind.
+
 pub trait DynInterpParser<P>: InterpParser<P> {
     type Parameter;
     fn init_param(&self, params: Self::Parameter, state: &mut Self::State, destination: &mut Option<Self::Returning>);
 }
 
-pub struct DefaultInterp;
-
-pub struct SubInterp<S>(pub S);
-
-// Structurally checks and skips the format, but consumes only the minimum memory required to do so
-// and returns nothing.
-pub struct DropInterp;
 
 pub struct ByteState;
 
@@ -158,10 +191,10 @@ impl<I, S : InterpParser<I>, const N : usize> InterpParser<Array< I, N>> for Sub
 }
 
 macro_rules! number_parser {
-    ($p:ident, $size:expr) => {
-        impl<const E: Endianness> InterpParser<$p<E>> for DefaultInterp where <$p<E> as RV>::R : Convert<E> {
+    ($p:ident, $size:expr, $t:ty) => {
+        impl<const E: Endianness> InterpParser<$p<E>> for DefaultInterp where $t : Convert<E> {
             type State = <DefaultInterp as InterpParser<Array<Byte, $size>>>::State;
-            type Returning = <$p<E> as RV>::R;
+            type Returning = $t;
             fn init(&self) -> Self::State {
                 <DefaultInterp as InterpParser<Array<Byte, $size>>>::init(&DefaultInterp)
             }
@@ -189,9 +222,9 @@ macro_rules! number_parser {
         }
     }
 }
-number_parser! { U16, 2 }
-number_parser! { U32, 4 }
-number_parser! { U64, 8 }
+number_parser! { U16, 2, u16 }
+number_parser! { U32, 4, u32 }
+number_parser! { U64, 8, u64 }
 
 pub enum ForwardDArrayParserState<N, IS, I, const M : usize > {
     Length(N),
@@ -269,13 +302,6 @@ impl< N, I, const M : usize> InterpParser<DArray<N, I, M>> for DefaultInterp whe
 }
 */
 
-// Action is essentailly an fmap that can fail.
-// We _could_ constraint F to actually be an fn(..) -> Option<()> to improve error messages when
-// functions do not have the correct shape, but that reduces our ability to write different
-// instances later.
-#[derive(Clone)]
-pub struct Action<S, F>(pub S, pub F);
-
 impl<A, R, S : InterpParser<A>> InterpParser<A> for Action<S, fn(&<S as InterpParser<A>>::Returning, &mut Option<R>) -> Option<()>>
 {
     type State = (<S as InterpParser<A> >::State, Option<<S as InterpParser<A> >::Returning>);
@@ -313,10 +339,10 @@ impl<A, R, S : DynInterpParser<A>> DynInterpParser<A> for Action<S, fn(&<S as In
         }
     }
 
-/* This impl exists to allow the _function_ of an Action to be the target of the parameter for
- * DynInterpParser, thus giving an escape hatch to thread a parameter past a non-parameterized
- * parser. Whether this should still be an Action as opposed to some other name is not immediately
- * clear. */
+/// This impl exists to allow the _function_ of an Action to be the target of the parameter for
+/// DynInterpParser, thus giving an escape hatch to thread a parameter past a non-parameterized
+/// parser. Whether this should still be an Action as opposed to some other name is not immediately
+/// clear.
 impl<A, R, S : InterpParser<A>, C> InterpParser<A> for Action<S, fn(&<S as
     InterpParser<A>>::Returning, &mut Option<R>, C) -> Option<()>>
 {
@@ -356,10 +382,6 @@ impl<A, R, S : InterpParser<A>, C> DynInterpParser<A> for Action<S, fn(&<S as In
         }
     }
 
-/* A MoveAction is the same as an Action with the distinction that it takes it's argument via Move,
- * thus enabling it to work with types that do not have Copy or Clone and have nontrivial semantics
- * involving Drop. */
-pub struct MoveAction<S, F>(pub S, pub F);
 impl<A, R, S : InterpParser<A>> InterpParser<A> for MoveAction<S, fn(<S as InterpParser<A>>::Returning, &mut Option<R>) -> Option<()>>
 {
     type State = (<S as InterpParser<A> >::State, Option<<S as InterpParser<A> >::Returning>);
@@ -401,14 +423,12 @@ fn rej<'a>(cnk: &'a [u8]) -> (PResult<OOB>, RemainingSlice<'a>) {
     (Some(OOB::Reject), cnk)
 }
 
-#[derive(Clone)]
-// S is the first subparser to run
-// F is the continuation parser to run, which can depend on the result of S
-pub struct Bind<S, F>(pub S, pub F);
 
-// Initially the state is the state of the first subparser, and its result location
-// After the first subparser runs, if it failed, then the whole bind parser will fail
-// but if it succeeds, then the parser state transitions to BindSecond.
+/// State for Bind
+///
+/// Initially the state is the state of the first subparser, and its result location
+/// After the first subparser runs, if it failed, then the whole bind parser will fail
+/// but if it succeeds, then the parser state transitions to BindSecond.
 #[derive(InPlaceInit)]
 pub enum BindState<A,B,S:InterpParser<A>,T:InterpParser<B>> {
     BindFirst(S::State, Option<<S as InterpParser<A> >::Returning>),
@@ -455,9 +475,6 @@ impl<A, B, S : InterpParser<A>, T : InterpParser<B>> InterpParser<(A,B)> for Bin
         }
     }
 }
-
-#[derive(Clone)]
-pub struct DynBind<S, F>(pub S, pub F);
 
 #[derive(InPlaceInit)]
 #[repr(u8)]
@@ -548,9 +565,6 @@ impl<A, B, S: DynInterpParser<A>, T: DynInterpParser<B, Parameter = S::Returning
         }
     }
 
-#[derive(Clone)]
-pub struct ObserveBytes<X, F, S>(pub fn() -> X, pub F, pub S);
-
 impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<A> for ObserveBytes<X, F, S>
     {
     type State = Option<<S as InterpParser<A>>::State>;
@@ -596,6 +610,7 @@ pub enum PairState<A, B> {
     Second(B),
 }
 
+/// Pairs of parsers parse the sequence of their schema types, and return a pair of their results.
 impl<A : InterpParser<C>, B : InterpParser<D>, C, D> InterpParser<(C, D)> for (A, B) {
     type State = PairState<<A as InterpParser<C>>::State, <B as InterpParser<D>>::State>;
     type Returning = (Option<A::Returning>, Option<B::Returning>);
@@ -660,11 +675,13 @@ pub struct LengthLimitedState<State> {
 }
 
 // Now define the parser type, which will resemble the mirror image of the state
-#[derive(Clone)]
-pub struct LengthLimited<S> {
-    bytes_limit : usize,
-    subparser : S
-}
+// Defined in interp.rs:
+//
+// #[derive(Clone)]
+// pub struct LengthLimited<S> {
+//    bytes_limit : usize,
+//    subparser : S
+//}
 
 // Implement InterpParser for the parser
 impl<I, S : InterpParser<I>> InterpParser<I> for LengthLimited<S> {
@@ -712,13 +729,6 @@ impl<I, S : InterpParser<I>> InterpParser<I> for LengthLimited<S> {
     }
 }
 
-// I is a closure to initialize the observer of the input, namely X, which is usually a hasher
-// F is a method which does the observing for the observer.
-// S is the parser for the input of the hasher from the raw input
-// Note that ObserveLengthedBytes also consumes a length prefix from the raw input
-// Confer: LengthFallback
-#[derive(Clone)]
-pub struct ObserveLengthedBytes<I : Fn () -> X, X, F, S>(pub I, pub F, pub S, pub bool);
 
 impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> InterpParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S> where
     DefaultInterp : InterpParser<N>,
@@ -913,9 +923,7 @@ mod test {
                         }
                         None => {
                             panic!("Ran out of input chunks before parser accepted");
-                        }
-                    }
-                }
+                        } } }
                 Ok(new_cursor) => {
                     assert_eq!(destination.as_ref().unwrap(), result);
                     assert_eq!(new_cursor, &[][..]);
