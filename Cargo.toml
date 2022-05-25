@@ -20,7 +20,7 @@ paste = "1.0"
 bstringify = "0.1.2"
 
 [dependencies.ledger-log]
-git = "https://github.com/obsidiansystems/ledger-platform"
+git = "https://github.com/ea-nasir/ledger-log"
 features = ["log_trace"]
 optional = true
 
