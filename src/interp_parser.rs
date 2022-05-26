@@ -642,16 +642,6 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8]
                 Length(ref mut nstate, ref mut length_out) => {
                     cursor = <DefaultInterp as InterpParser<N>>::parse(&DefaultInterp, nstate, cursor, length_out)?;
                     let len = <usize as TryFrom<<DefaultInterp as InterpParser<N>>::Returning>>::try_from(length_out.ok_or(rej(cursor))?).or(Err(rej(cursor)))?;
-                    match destination {
-                      None => {
-                          /*call_me_maybe(|| {
-                          let result = self.0();
-                          *destination = Some((None, result));
-                          Some(())
-                          }).ok_or(rej(cursor))?;*/
-                      }
-                      _ => { }
-                    }
                     set_from_thunk(state, || Element(0, len, <S as InterpParser<I>>::init(&self.2)));
                     continue;
                 }
