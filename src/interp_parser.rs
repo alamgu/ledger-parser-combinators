@@ -303,8 +303,8 @@ impl<A, R, S : DynInterpParser<A>> DynInterpParser<A> for Action<S, fn(&<S as In
         type Parameter = S::Parameter;
         #[inline(never)]
         fn init_param(&self, param: Self::Parameter, state: &mut Self::State, _destination: &mut Option<Self::Returning>) {
-            state.0 = <S as InterpParser<A>>::init(&self.0);
-            state.1 = None;
+            set_from_thunk(&mut state.0, || <S as InterpParser<A>>::init(&self.0));
+            set_from_thunk(&mut state.1, || None);
             self.0.init_param(param, &mut state.0, &mut state.1);
         }
     }
@@ -480,7 +480,7 @@ impl<A, X:Clone, F: Fn(&mut X, &[u8])->(), S: InterpParser<A>> DynInterpParser<A
         type Parameter = X;
         #[inline(never)]
         fn init_param(&self, param: Self::Parameter, state: &mut Self::State, destination: &mut Option<Self::Returning>) {
-            *destination = Some((param, None));
+            *destination = Some((param.clone(), None));
             *state = Some(<S as InterpParser<A>>::init(&self.2));
         }
     }
@@ -615,7 +615,7 @@ impl<I, S : InterpParser<I>> InterpParser<I> for LengthLimited<S> {
 #[derive(Clone)]
 pub struct ObserveLengthedBytes<I : Fn () -> X, X, F, S>(pub I, pub F, pub S, pub bool);
 
-impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> InterpParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S> where
+impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> InterpParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S> where
     DefaultInterp : InterpParser<N>,
     usize: TryFrom<<DefaultInterp as InterpParser<N>>::Returning>,
     <DefaultInterp as InterpParser<N>>::Returning: Copy {
@@ -703,14 +703,14 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8]
     }
 }
 
-impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X: Clone, F: Fn(&mut X, &[u8])->()> DynInterpParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S> where
+impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> DynInterpParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S> where
     DefaultInterp : InterpParser<N>,
     usize: TryFrom<<DefaultInterp as InterpParser<N>>::Returning>,
     <DefaultInterp as InterpParser<N>>::Returning: Copy {
         type Parameter = X;
         #[inline(never)]
         fn init_param(&self, param: Self::Parameter, state: &mut Self::State, destination: &mut Option<Self::Returning>) {
-            *destination = Some((None, param));
+            set_from_thunk(destination, || { Some((None, param)) });
             *state = LengthFallbackParserState::Length(<DefaultInterp as InterpParser<N>>::init(&DefaultInterp), None)
         }
     }
