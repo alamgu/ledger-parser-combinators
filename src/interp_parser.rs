@@ -334,8 +334,6 @@ impl<A, B, S : InterpParser<A>, T : InterpParser<B>> InterpParser<(A,B)> for Bin
     #[inline(never)]
     fn init(&self) -> Self::State {
         use BindState::*;
-        #[cfg(feature = "logging")]
-        error!("Bind T size: {} {}", core::mem::size_of::<T>(), core::mem::size_of::<T::State>());
         BindFirst (<S as InterpParser<A>>::init(&self.0), None)
     }
 
@@ -391,8 +389,6 @@ impl<A, B, S : InterpParser<A>, T : DynInterpParser<B, Parameter = S::Returning>
     #[inline(never)]
     fn init(&self) -> Self::State {
         use DynBindState::*;
-        #[cfg(feature = "logging")]
-        error!("Bind T size: {} {}", core::mem::size_of::<T>(), core::mem::size_of::<T::State>());
         BindFirst (<S as InterpParser<A>>::init(&self.0), None)
     }
 
