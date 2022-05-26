@@ -309,6 +309,90 @@ impl<A, R, S : DynInterpParser<A>> DynInterpParser<A> for Action<S, fn(&<S as In
         }
     }
 
+/* This impl exists to allow the _function_ of an Action to be the target of the parameter for
+ * DynInterpParser, thus giving an escape hatch to thread a parameter past a non-parameterized
+ * parser. Whether this should still be an Action as opposed to some other name is not immediately
+ * clear. */
+impl<A, R, S : InterpParser<A>, C> InterpParser<A> for Action<S, fn(&<S as
+    InterpParser<A>>::Returning, &mut Option<R>, C) -> Option<()>>
+{
+    type State = (<S as InterpParser<A> >::State, Option<<S as InterpParser<A> >::Returning>, Option<C>);
+    type Returning = R;
+
+    #[inline(never)]
+    fn init(&self) -> Self::State {
+        (<S as InterpParser<A>>::init(&self.0), None, None)
+    }
+
+    #[inline(never)]
+    fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
+       self.0.init_in_place(unsafe { core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).0) as *mut core::mem::MaybeUninit<<S as InterpParser<A> >::State> });
+       call_fn( || unsafe { (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).1) as *mut Option<<S as InterpParser<A> >::Returning> ).write(None)} );
+       call_fn( || unsafe { (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).2) as *mut Option<C> ).write(None)} );
+    }
+
+    #[inline(never)]
+    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        let new_chunk = self.0.parse(&mut state.0, chunk, &mut state.1)?;
+        match (self.1)(state.1.as_ref().ok_or((Some(OOB::Reject),new_chunk))?, destination, core::mem::take(&mut state.2).ok_or((Some(OOB::Reject),new_chunk))?) {
+            None => { Err((Some(OOB::Reject),new_chunk)) }
+            Some(()) => { Ok(new_chunk) }
+        }
+    }
+}
+
+impl<A, R, S : InterpParser<A>, C> DynInterpParser<A> for Action<S, fn(&<S as InterpParser<A>>::Returning, &mut Option<R>, C) -> Option<()>>
+    {
+        type Parameter = C;
+        #[inline(never)]
+        fn init_param(&self, param: Self::Parameter, state: &mut Self::State, _destination: &mut Option<Self::Returning>) {
+            set_from_thunk(&mut state.0, || <S as InterpParser<A>>::init(&self.0));
+            set_from_thunk(&mut state.1, || None);
+            set_from_thunk(&mut state.2, || Some(param));
+        }
+    }
+
+/* A MoveAction is the same as an Action with the distinction that it takes it's argument via Move,
+ * thus enabling it to work with types that do not have Copy or Clone and have nontrivial semantics
+ * involving Drop. */
+pub struct MoveAction<S, F>(pub S, pub F);
+impl<A, R, S : InterpParser<A>> InterpParser<A> for MoveAction<S, fn(<S as InterpParser<A>>::Returning, &mut Option<R>) -> Option<()>>
+{
+    type State = (<S as InterpParser<A> >::State, Option<<S as InterpParser<A> >::Returning>);
+    type Returning = R;
+
+    #[inline(never)]
+    fn init(&self) -> Self::State {
+        (<S as InterpParser<A>>::init(&self.0), None)
+    }
+
+    #[inline(never)]
+    fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
+       self.0.init_in_place(unsafe { core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).0) as *mut core::mem::MaybeUninit<<S as InterpParser<A> >::State> });
+       call_fn( || unsafe { (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).1) as *mut Option<<S as InterpParser<A> >::Returning> ).write(None)} );
+    }
+
+    #[inline(never)]
+    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        let new_chunk = self.0.parse(&mut state.0, chunk, &mut state.1)?;
+        match (self.1)(core::mem::take(&mut state.1).ok_or((Some(OOB::Reject),new_chunk))?, destination) {
+            None => { Err((Some(OOB::Reject),new_chunk)) }
+            Some(()) => { Ok(new_chunk) }
+        }
+    }
+}
+
+impl<A, R, S : DynInterpParser<A>> DynInterpParser<A> for MoveAction<S, fn(<S as InterpParser<A>>::Returning, &mut Option<R>) -> Option<()>>
+    {
+        type Parameter = S::Parameter;
+        #[inline(never)]
+        fn init_param(&self, param: Self::Parameter, state: &mut Self::State, _destination: &mut Option<Self::Returning>) {
+            set_from_thunk(&mut state.0, || <S as InterpParser<A>>::init(&self.0));
+            set_from_thunk(&mut state.1, || None);
+            self.0.init_param(param, &mut state.0, &mut state.1);
+        }
+    }
+
 fn rej<'a>(cnk: &'a [u8]) -> (PResult<OOB>, RemainingSlice<'a>) {
     (Some(OOB::Reject), cnk)
 }
