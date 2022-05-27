@@ -54,7 +54,7 @@ pub trait InterpParser<P>: ParserCommon<P> {
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a>;
 }
 
-pub trait DynInterpParser<P>: ParserCommon<P> {
+pub trait DynParser<P>: ParserCommon<P> {
     type Parameter;
     fn init_param(&self, params: Self::Parameter, state: &mut Self::State, destination: &mut Option<Self::Returning>);
 }
@@ -327,7 +327,7 @@ impl<A, R, S : InterpParser<A>> InterpParser<A> for Action<S, fn(&<S as ParserCo
     }
 }
 
-impl<A, R, S : DynInterpParser<A>> DynInterpParser<A> for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
+impl<A, R, S : DynParser<A>> DynParser<A> for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
     {
         type Parameter = S::Parameter;
         #[inline(never)]
@@ -339,7 +339,7 @@ impl<A, R, S : DynInterpParser<A>> DynInterpParser<A> for Action<S, fn(&<S as Pa
     }
 
 /* This impl exists to allow the _function_ of an Action to be the target of the parameter for
- * DynInterpParser, thus giving an escape hatch to thread a parameter past a non-parameterized
+ * DynParser, thus giving an escape hatch to thread a parameter past a non-parameterized
  * parser. Whether this should still be an Action as opposed to some other name is not immediately
  * clear. */
 impl<A, R, S : ParserCommon<A>, C> ParserCommon<A> for Action<S, fn(&<S as
@@ -373,7 +373,7 @@ impl<A, R, S : InterpParser<A>, C> InterpParser<A> for Action<S, fn(&<S as Parse
     }
 }
 
-impl<A, R, S : ParserCommon<A>, C> DynInterpParser<A> for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>, C) -> Option<()>>
+impl<A, R, S : ParserCommon<A>, C> DynParser<A> for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>, C) -> Option<()>>
     {
         type Parameter = C;
         #[inline(never)]
@@ -417,7 +417,7 @@ impl<A, R, S : InterpParser<A>> InterpParser<A> for MoveAction<S, fn(<S as Parse
     }
 }
 
-impl<A, R, S : DynInterpParser<A>> DynInterpParser<A> for MoveAction<S, fn(<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
+impl<A, R, S : DynParser<A>> DynParser<A> for MoveAction<S, fn(<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
     {
         type Parameter = S::Parameter;
         #[inline(never)]
@@ -525,7 +525,7 @@ fn call_fn(f: impl FnOnce()) {
     f()
 }
 
-impl<A, B, S : ParserCommon<A>, T : DynInterpParser<B, Parameter = S::Returning>> ParserCommon<(A,B)> for DynBind<S, T>
+impl<A, B, S : ParserCommon<A>, T : DynParser<B, Parameter = S::Returning>> ParserCommon<(A,B)> for DynBind<S, T>
 // fn(&<S as InterpParser<A>>::Returning) -> Option<T>>
 {
     type State = DynBindState<A,B,S,T>;
@@ -541,7 +541,7 @@ impl<A, B, S : ParserCommon<A>, T : DynInterpParser<B, Parameter = S::Returning>
     }
 }
 
-impl<A, B, S : InterpParser<A>, T : DynInterpParser<B, Parameter = S::Returning> + InterpParser<B>> InterpParser<(A,B)> for DynBind<S, T>
+impl<A, B, S : InterpParser<A>, T : DynParser<B, Parameter = S::Returning> + InterpParser<B>> InterpParser<(A,B)> for DynBind<S, T>
 {
     #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
@@ -576,7 +576,7 @@ impl<A, B, S : InterpParser<A>, T : DynInterpParser<B, Parameter = S::Returning>
     }
 }
 
-impl<A, B, S: DynInterpParser<A>, T: DynInterpParser<B, Parameter = S::Returning>> DynInterpParser<(A,B)> for DynBind<S, T>
+impl<A, B, S: DynParser<A>, T: DynParser<B, Parameter = S::Returning>> DynParser<(A,B)> for DynBind<S, T>
     {
         type Parameter = S::Parameter;
         #[inline(never)]
@@ -625,7 +625,7 @@ impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<
     }
 }
 
-impl<A, X:Clone, F: Fn(&mut X, &[u8])->(), S: InterpParser<A>> DynInterpParser<A> for ObserveBytes<X, F, S>
+impl<A, X:Clone, F: Fn(&mut X, &[u8])->(), S: InterpParser<A>> DynParser<A> for ObserveBytes<X, F, S>
     {
         type Parameter = X;
         #[inline(never)]
@@ -865,7 +865,7 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> 
     }
 }
 
-impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> DynInterpParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S> where
+impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> DynParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S> where
     DefaultInterp : InterpParser<N>,
     usize: TryFrom<<DefaultInterp as ParserCommon<N>>::Returning>,
     <DefaultInterp as ParserCommon<N>>::Returning: Copy {
