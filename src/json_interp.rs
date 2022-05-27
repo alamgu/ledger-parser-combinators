@@ -79,13 +79,7 @@ pub enum JsonToken<'a> {
 }
 
 
-pub trait JsonInterp<S> {
-    type State;
-    type Returning;
-    fn init(&self) -> Self::State;
-    fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
-        unsafe { (*state).as_mut_ptr().write(self.init()); }
-    }
+pub trait JsonInterp<S>: ParserCommon<S> {
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>>;
 }
 
@@ -260,17 +254,20 @@ fn get_json_token<'a>(state: &mut JsonTokenizerState, chunk: &'a [u8]) -> Result
 }
 
 // Tokenize json and pass to a stream.
-impl<T, S : JsonInterp<T>> InterpParser<Json<T>> for Json<S> {
-    type State = (JsonTokenizerState, <S as JsonInterp<T>>::State);
-    type Returning = <S as JsonInterp<T>>::Returning;
+impl<T, S : ParserCommon<T>> ParserCommon<Json<T>> for Json<S> {
+    type State = (JsonTokenizerState, <S as ParserCommon<T>>::State);
+    type Returning = <S as ParserCommon<T>>::Returning;
 
     fn init(&self) -> Self::State {
-        (JsonTokenizerState::Value, <S as JsonInterp<T>>::init(&self.0))
+        (JsonTokenizerState::Value, <S as ParserCommon<T>>::init(&self.0))
     }
     fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
         unsafe { (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).0) as *mut JsonTokenizerState).write(JsonTokenizerState::Value); }
-        self.0.init_in_place(unsafe { core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).0) as *mut core::mem::MaybeUninit<<S as JsonInterp<T> >::State> });
+        self.0.init_in_place(unsafe { core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).0) as *mut core::mem::MaybeUninit<<S as ParserCommon<T> >::State> });
     }
+}
+
+impl<T, S : JsonInterp<T>> InterpParser<Json<T>> for Json<S> {
     #[inline(never)]
     fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
         let mut cursor : &[u8] = chunk;
@@ -314,10 +311,13 @@ pub struct DropInterpJsonState {
     state : DropInterpStateEnum
 }
 
-impl JsonInterp<JsonAny> for DropInterp {
+impl ParserCommon<JsonAny> for DropInterp {
     type State = DropInterpJsonState;
     type Returning = ();
     fn init(&self) -> Self::State { DropInterpJsonState { stack: ArrayVec::new(), state: DropInterpStateEnum::Start, seen_item: false } }
+}
+
+impl JsonInterp<JsonAny> for DropInterp {
     #[inline(never)]
     fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         let DropInterpJsonState { ref mut stack, ref mut state, ref mut seen_item } = full_state;
@@ -515,10 +515,13 @@ fn test_json_any_drop() {
     */
 }
 
-impl JsonInterp<JsonBool> for DropInterp {
+impl ParserCommon<JsonBool> for DropInterp {
     type State = ();
     type Returning = ();
     fn init(&self) -> Self::State { () }
+}
+
+impl JsonInterp<JsonBool> for DropInterp {
     #[inline(never)]
     fn parse<'a>(&self, _state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         match token {
@@ -528,10 +531,13 @@ impl JsonInterp<JsonBool> for DropInterp {
     }
 }
 
-impl JsonInterp<JsonString> for DropInterp {
+impl ParserCommon<JsonString> for DropInterp {
     type State = DropInterpJsonState;
     type Returning = ();
     fn init(&self) -> Self::State { DropInterpJsonState { stack: ArrayVec::new(), state: DropInterpStateEnum::Start, seen_item: false } }
+}
+
+impl JsonInterp<JsonString> for DropInterp {
     #[inline(never)]
     fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         let DropInterpJsonState { ref mut stack, ref mut state, seen_item : _ } = full_state;
@@ -570,10 +576,13 @@ fn test_json_string_drop() {
     test_json_interp_parser::<Json<DropInterp>, Json<JsonString>>(&Json(DropInterp), b"[]", Err((Some(OOB::Reject), b"]")));
 }
 
-impl JsonInterp<JsonNumber> for DropInterp {
+impl ParserCommon<JsonNumber> for DropInterp {
     type State = DropInterpJsonState;
     type Returning = ();
     fn init(&self) -> Self::State { DropInterpJsonState { stack: ArrayVec::new(), state: DropInterpStateEnum::Start, seen_item: false } }
+}
+
+impl JsonInterp<JsonNumber> for DropInterp {
     #[inline(never)]
     fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         let DropInterpJsonState { ref mut stack, ref mut state, seen_item : _ } = full_state;
@@ -610,10 +619,13 @@ pub enum JsonArrayDropState<S, D> {
     AfterValue
 }
 
-impl<T> JsonInterp<JsonArray<T>> for DropInterp where DropInterp: JsonInterp<T> {
-    type State = JsonArrayDropState<<DropInterp as JsonInterp<T>>::State, <DropInterp as JsonInterp<T>>::Returning>;
+impl<T> ParserCommon<JsonArray<T>> for DropInterp where DropInterp: ParserCommon<T> {
+    type State = JsonArrayDropState<<DropInterp as ParserCommon<T>>::State, <DropInterp as ParserCommon<T>>::Returning>;
     type Returning = ();
     fn init(&self) -> Self::State { JsonArrayDropState::Start }
+}
+
+impl<T> JsonInterp<JsonArray<T>> for DropInterp where DropInterp: JsonInterp<T> {
     #[inline(never)]
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         use JsonArrayDropState::*;
@@ -624,11 +636,11 @@ impl<T> JsonInterp<JsonArray<T>> for DropInterp where DropInterp: JsonInterp<T> 
                 (Start, BeginArray) => { set_from_thunk(st.0, || First); }
                 (First, EndArray) => { *destination=Some(()); return Ok(()) }
                 (First, _) => {
-                    set_from_thunk(st.0, || Item(<DropInterp as JsonInterp<T>>::init(&DropInterp), None));
+                    set_from_thunk(st.0, || Item(<DropInterp as ParserCommon<T>>::init(&DropInterp), None));
                     continue;
                 }
                 (Item(ref mut s, ref mut sub_destination), tok) => { <DropInterp as JsonInterp<T>>::parse(&DropInterp, s, tok, sub_destination)?; set_from_thunk(st.0, || AfterValue); }
-                (AfterValue, ValueSeparator) => { set_from_thunk(st.0, || Item(<DropInterp as JsonInterp<T>>::init(&DropInterp), None)) }
+                (AfterValue, ValueSeparator) => { set_from_thunk(st.0, || Item(<DropInterp as ParserCommon<T>>::init(&DropInterp), None)) }
                 (AfterValue, EndArray) => { *destination=Some(()); return Ok(()) }
                 _ => { return Err(Some(OOB::Reject)) }
             };
@@ -638,10 +650,13 @@ impl<T> JsonInterp<JsonArray<T>> for DropInterp where DropInterp: JsonInterp<T> 
 }
 
 /* Important: DROPS it's results */
-impl<T, S: JsonInterp<T>> JsonInterp<JsonArray<T>> for SubInterp<S> {
-    type State = JsonArrayDropState<<S as JsonInterp<T>>::State, <S as JsonInterp<T>>::Returning>;
+impl<T, S: ParserCommon<T>> ParserCommon<JsonArray<T>> for SubInterp<S> {
+    type State = JsonArrayDropState<<S as ParserCommon<T>>::State, <S as ParserCommon<T>>::Returning>;
     type Returning = ();
     fn init(&self) -> Self::State { JsonArrayDropState::Start }
+}
+
+impl<T, S: JsonInterp<T>> JsonInterp<JsonArray<T>> for SubInterp<S> {
     #[inline(never)]
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         use JsonArrayDropState::*;
@@ -652,7 +667,7 @@ impl<T, S: JsonInterp<T>> JsonInterp<JsonArray<T>> for SubInterp<S> {
                 (Start, BeginArray) => { *destination=Some(()); set_from_thunk(st.0, || First); }
                 (First, EndArray) => { return Ok(()) }
                 (First, _) => {
-                    set_from_thunk(st.0, || Item(<S as JsonInterp<T>>::init(&self.0), None));
+                    set_from_thunk(st.0, || Item(<S as ParserCommon<T>>::init(&self.0), None));
                     continue;
                 }
                 (Item(ref mut s, ref mut sub_destination), tok) => {
@@ -660,7 +675,7 @@ impl<T, S: JsonInterp<T>> JsonInterp<JsonArray<T>> for SubInterp<S> {
                     // destination.as_mut().ok_or(Some(OOB::Reject))?.add_and_set(sub_destination.as_ref().ok_or(Some(OOB::Reject))?);
                     set_from_thunk(st.0, || AfterValue);
                 }
-                (AfterValue, ValueSeparator) => { set_from_thunk(st.0, || Item(<S as JsonInterp<T>>::init(&self.0), None)); }
+                (AfterValue, ValueSeparator) => { set_from_thunk(st.0, || Item(<S as ParserCommon<T>>::init(&self.0), None)); }
                 (AfterValue, EndArray) => { return Ok(()) }
                 _ => { return Err(Some(OOB::Reject)) }
             };
@@ -677,10 +692,13 @@ impl<S, RV> SubInterpM<S, RV> {
     pub const fn new(s: S) -> Self { SubInterpM(s, core::marker::PhantomData) }
 }
 
-impl<T, S: JsonInterp<T>, RV: Debug + Summable<<S as JsonInterp<T>>::Returning>> JsonInterp<JsonArray<T>> for SubInterpM<S, RV> {
-    type State = JsonArrayDropState<<S as JsonInterp<T>>::State, <S as JsonInterp<T>>::Returning>;
+impl<T, S: ParserCommon<T>, RV: Debug + Summable<<S as ParserCommon<T>>::Returning>> ParserCommon<JsonArray<T>> for SubInterpM<S, RV> {
+    type State = JsonArrayDropState<<S as ParserCommon<T>>::State, <S as ParserCommon<T>>::Returning>;
     type Returning = RV;
     fn init(&self) -> Self::State { JsonArrayDropState::Start }
+}
+
+impl<T, S: JsonInterp<T>, RV: Debug + Summable<<S as ParserCommon<T>>::Returning>> JsonInterp<JsonArray<T>> for SubInterpM<S, RV> {
     #[inline(never)]
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         use JsonArrayDropState::*;
@@ -691,7 +709,7 @@ impl<T, S: JsonInterp<T>, RV: Debug + Summable<<S as JsonInterp<T>>::Returning>>
                 (Start, BeginArray) => { *destination=Some(Summable::zero()); set_from_thunk(st.0, || First); }
                 (First, EndArray) => { return Ok(()) }
                 (First, _) => {
-                    set_from_thunk(st.0, || Item(<S as JsonInterp<T>>::init(&self.0), None));
+                    set_from_thunk(st.0, || Item(<S as ParserCommon<T>>::init(&self.0), None));
                     continue;
                 }
                 (Item(ref mut s, ref mut sub_destination), tok) => {
@@ -701,7 +719,7 @@ impl<T, S: JsonInterp<T>, RV: Debug + Summable<<S as JsonInterp<T>>::Returning>>
                     destination.as_mut().ok_or(Some(OOB::Reject))?.add_and_set(sub_destination.as_ref().ok_or(Some(OOB::Reject))?);
                     set_from_thunk(st.0, || AfterValue);
                 }
-                (AfterValue, ValueSeparator) => { set_from_thunk(st.0, || Item(<S as JsonInterp<T>>::init(&self.0), None)); }
+                (AfterValue, ValueSeparator) => { set_from_thunk(st.0, || Item(<S as ParserCommon<T>>::init(&self.0), None)); }
                 (AfterValue, EndArray) => { return Ok(()) }
                 _ => {
                     return Err(Some(OOB::Reject))
@@ -715,11 +733,15 @@ impl<T, S: JsonInterp<T>, RV: Debug + Summable<<S as JsonInterp<T>>::Returning>>
 
 pub struct AccumulateArray<ItemInterp, const N: usize>(pub ItemInterp);
 
-impl<T, S: JsonInterp<T>, const N: usize> JsonInterp<JsonArray<T>> for AccumulateArray<S, N>
-  where <S as JsonInterp<T>>::Returning: Clone {
-    type State = JsonArrayDropState<<S as JsonInterp<T>>::State, <S as JsonInterp<T>>::Returning>;
-    type Returning = ArrayVec<<S as JsonInterp<T>>::Returning, N>;
+impl<T, S: ParserCommon<T>, const N: usize> ParserCommon<JsonArray<T>> for AccumulateArray<S, N>
+  where <S as ParserCommon<T>>::Returning: Clone {
+    type State = JsonArrayDropState<<S as ParserCommon<T>>::State, <S as ParserCommon<T>>::Returning>;
+    type Returning = ArrayVec<<S as ParserCommon<T>>::Returning, N>;
     fn init(&self) -> Self::State { JsonArrayDropState::Start }
+}
+
+impl<T, S: JsonInterp<T>, const N: usize> JsonInterp<JsonArray<T>> for AccumulateArray<S, N>
+  where <S as ParserCommon<T>>::Returning: Clone {
     #[inline(never)]
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         use JsonArrayDropState::*;
@@ -732,7 +754,7 @@ impl<T, S: JsonInterp<T>, const N: usize> JsonInterp<JsonArray<T>> for Accumulat
                 }
                 First if token == EndArray => { return Ok(()) }
                 First => {
-                    set_from_thunk(state, || Item(<S as JsonInterp<T>>::init(&self.0), None));
+                    set_from_thunk(state, || Item(<S as ParserCommon<T>>::init(&self.0), None));
                     continue;
                 }
                 Item(ref mut s, ref mut sub_destination) => {
@@ -740,7 +762,7 @@ impl<T, S: JsonInterp<T>, const N: usize> JsonInterp<JsonArray<T>> for Accumulat
                     destination.as_mut().ok_or(Some(OOB::Reject))?.try_push(sub_destination.as_ref().ok_or(Some(OOB::Reject))?.clone()).or(Err(Some(OOB::Reject)))?;
                     set_from_thunk(state, || AfterValue);
                 }
-                AfterValue if token == ValueSeparator => { set_from_thunk(state, || Item(<S as JsonInterp<T>>::init(&self.0), None)); }
+                AfterValue if token == ValueSeparator => { set_from_thunk(state, || Item(<S as ParserCommon<T>>::init(&self.0), None)); }
                 AfterValue if token == EndArray => { return Ok(()) }
                 _ => { return Err(Some(OOB::Reject)) }
             };
@@ -749,13 +771,7 @@ impl<T, S: JsonInterp<T>, const N: usize> JsonInterp<JsonArray<T>> for Accumulat
     }
 }
 
-impl<A, R, S : JsonInterp<A>> JsonInterp<A> for Action<S, fn(&<S as JsonInterp<A>>::Returning, &mut Option<R>) -> Option<()>> {
-    type State = (<S as JsonInterp<A> >::State, Option<<S as JsonInterp<A>>::Returning>);
-    type Returning = R;
-    fn init(&self) -> Self::State {
-        (<S as JsonInterp<A>>::init(&self.0), None)
-    }
-
+impl<A, R, S : JsonInterp<A>> JsonInterp<A> for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>> {
     #[inline(never)]
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         self.0.parse(&mut state.0, token, &mut state.1)?;
@@ -774,10 +790,12 @@ pub enum JsonStringAccumulateState<const N : usize> {
     Accumulating,
     End
 }
-impl<const N : usize> JsonInterp<JsonString> for JsonStringAccumulate<N> {
+impl<const N : usize> ParserCommon<JsonString> for JsonStringAccumulate<N> {
     type State = JsonStringAccumulateState<N>;
     type Returning = ArrayVec<u8,N>;
     fn init(&self) -> Self::State { JsonStringAccumulateState::Start }
+}
+impl<const N : usize> JsonInterp<JsonString> for JsonStringAccumulate<N> {
     #[inline(never)]
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         match (state, token) {
@@ -801,10 +819,12 @@ impl<const N : usize> JsonInterp<JsonString> for JsonStringAccumulate<N> {
     }
 }
 
-impl<const N : usize> JsonInterp<JsonNumber> for JsonStringAccumulate<N> {
+impl<const N : usize> ParserCommon<JsonNumber> for JsonStringAccumulate<N> {
     type State = JsonStringAccumulateState<N>;
     type Returning = ArrayVec<u8,N>;
     fn init(&self) -> Self::State { JsonStringAccumulateState::Start }
+}
+impl<const N : usize> JsonInterp<JsonNumber> for JsonStringAccumulate<N> {
     #[inline(never)]
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         match (state, token) {
@@ -840,14 +860,16 @@ fn test_json_string_accum() {
 
 pub struct OrDropAny<A>(pub A);
 
-impl<A, I: JsonInterp<A>> JsonInterp<Alt<A, JsonAny>> for OrDropAny<I> {
+impl<A, I: ParserCommon<A>> ParserCommon<Alt<A, JsonAny>> for OrDropAny<I> {
     type State = (
         Option<I::State>,
-        Option<<DropInterp as JsonInterp<JsonAny>>::State>);
-    type Returning = Option< <I as JsonInterp<A>>::Returning >;
+        Option<<DropInterp as ParserCommon<JsonAny>>::State>);
+    type Returning = Option< <I as ParserCommon<A>>::Returning >;
     fn init(&self) -> Self::State {
-        (Some(self.0.init()), Some(<DropInterp as JsonInterp<JsonAny>>::init(&DropInterp)))
+        (Some(self.0.init()), Some(<DropInterp as ParserCommon<JsonAny>>::init(&DropInterp)))
     }
+}
+impl<A, I: JsonInterp<A>> JsonInterp<Alt<A, JsonAny>> for OrDropAny<I> {
     #[inline(never)]
     fn parse<'a>(&self, (ref mut state1, ref mut state2): &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         let mut rv2 = None;
@@ -869,14 +891,16 @@ impl<A, I: JsonInterp<A>> JsonInterp<Alt<A, JsonAny>> for OrDropAny<I> {
 
 pub struct OrDrop<A>(pub A);
 
-impl<A, I: JsonInterp<A>> JsonInterp<A> for OrDrop<I> where DropInterp: JsonInterp<A> {
+impl<A, I: ParserCommon<A>> ParserCommon<A> for OrDrop<I> where DropInterp: ParserCommon<A> {
     type State = (
         Option<I::State>,
-        Option<<DropInterp as JsonInterp<A>>::State>);
-    type Returning = Option< <I as JsonInterp<A>>::Returning >;
+        Option<<DropInterp as ParserCommon<A>>::State>);
+    type Returning = Option< <I as ParserCommon<A>>::Returning >;
     fn init(&self) -> Self::State {
-        (Some(self.0.init()), Some(<DropInterp as JsonInterp<A>>::init(&DropInterp)))
+        (Some(self.0.init()), Some(<DropInterp as ParserCommon<A>>::init(&DropInterp)))
     }
+}
+impl<A, I: JsonInterp<A>> JsonInterp<A> for OrDrop<I> where DropInterp: JsonInterp<A> {
     #[inline(never)]
     fn parse<'a>(&self, (ref mut state1, ref mut state2): &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         let mut rv2 = None;
@@ -903,16 +927,18 @@ pub enum AltResult<A,B> {
     Second(B)
 }
 
-impl<A, B, I: JsonInterp<A>, J: JsonInterp<B>> JsonInterp<Alt<A, B>> for Alt<I, J> {
+impl<A, B, I: ParserCommon<A>, J: ParserCommon<B>> ParserCommon<Alt<A, B>> for Alt<I, J> {
     type State = (
         Option<I::State>,
         Option<I::Returning>,
         Option<J::State>,
         Option<J::Returning>);
-    type Returning = AltResult<<I as JsonInterp<A>>::Returning, <J as JsonInterp<B>>::Returning>;
+    type Returning = AltResult<<I as ParserCommon<A>>::Returning, <J as ParserCommon<B>>::Returning>;
     fn init(&self) -> Self::State {
         (Some(self.0.init()), None, Some(self.1.init()), None)
     }
+}
+impl<A, B, I: JsonInterp<A>, J: JsonInterp<B>> JsonInterp<Alt<A, B>> for Alt<I, J> {
     #[inline(never)]
     fn parse<'a>(&self, (ref mut state1, ref mut rv1, ref mut state2, ref mut rv2): &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         match (state1.as_mut().map(|s| self.0.parse(s, token, rv1)).transpose()
@@ -983,15 +1009,15 @@ macro_rules! define_json_struct_interp {
                 }
             }
 
-            pub struct [<$name Interp>]<$([<Field $field:camel>]: JsonInterp<$schemaType>),*> {
+            pub struct [<$name Interp>]<$([<Field $field:camel>]: ParserCommon<$schemaType>),*> {
                 $(pub [<field_ $field:snake>] : [<Field $field:camel>] ),*
             }
 
             #[derive(Debug)]
             pub enum [<$name State>]<$([<Field $field:camel>]),*> {
                 Start,
-                Key(<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::State, Option<<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::Returning>),
-                KeySep(<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::Returning),
+                Key(<JsonStringAccumulate<$n> as ParserCommon<JsonString>>::State, Option<<JsonStringAccumulate<$n> as ParserCommon<JsonString>>::Returning>),
+                KeySep(<JsonStringAccumulate<$n> as ParserCommon<JsonString>>::Returning),
                 ValueSep,
                 End,
                 $([<Field $field:camel>]([<Field $field:camel>])),*
@@ -999,22 +1025,24 @@ macro_rules! define_json_struct_interp {
 
             //impl<A, AA : JsonInterp<A>, B, BB : JsonInterp<B>, C, CC : JsonInterp<C>> JsonInterp<SomeStruct<A,B,C>> for SomeStruct<AA, BB, CC>
 
-            impl<$([<Field $field:camel Interp>] : JsonInterp<$schemaType>),*> JsonInterp<[<$name:camel Schema>]> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
+            impl<$([<Field $field:camel Interp>] : ParserCommon<$schemaType>),*> ParserCommon<[<$name:camel Schema>]> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
                 type State = [<$name State>]<
-                    $(<[<Field $field:camel Interp>] as JsonInterp<$schemaType>>::State),*// ,
-                    // $(Option<<[<Field $field:camel Interp>] as JsonInterp<$schemaType>>::Returning>),*
+                    $(<[<Field $field:camel Interp>] as ParserCommon<$schemaType>>::State),*// ,
+                    // $(Option<<[<Field $field:camel Interp>] as ParserCommon<$schemaType>>::Returning>),*
                     >;
                 type Returning = $name <
-                    $(Option<<[<Field $field:camel Interp>] as JsonInterp<$schemaType>>::Returning>),*
+                    $(Option<<[<Field $field:camel Interp>] as ParserCommon<$schemaType>>::Returning>),*
                     >;
                 fn init(&self) -> Self::State { [<$name State>]::Start }
+            }
+            impl<$([<Field $field:camel Interp>] : JsonInterp<$schemaType>),*> JsonInterp<[<$name:camel Schema>]> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
     #[inline(never)]
                 fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<$crate::interp_parser::OOB>> {
                     match state {
                         // Object handling
                         [<$name State>]::Start if token == JsonToken::BeginObject => {
                             $crate::interp_parser::set_from_thunk(destination, || Some($name {$( [<field_ $field:snake>] : None ),* } ));
-                            $crate::interp_parser::set_from_thunk(state, || [<$name State>]::Key(<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::init(&JsonStringAccumulate), None));
+                            $crate::interp_parser::set_from_thunk(state, || [<$name State>]::Key(<JsonStringAccumulate<$n> as ParserCommon<JsonString>>::init(&JsonStringAccumulate), None));
                         }
                         [<$name State>]::Key(ref mut key_state, ref mut key_destination) => {
                             <JsonStringAccumulate<$n> as JsonInterp<JsonString>>::parse(&JsonStringAccumulate, key_state, token, key_destination)?;
@@ -1030,7 +1058,7 @@ macro_rules! define_json_struct_interp {
                                 $(
                                     $crate::json_interp::bstringify!($field) => {
                                         trace!("json-struct-interp parser: checking key {:?}\n", core::str::from_utf8(key));
-                                        $crate::interp_parser::set_from_thunk(state, || [<$name State>]::[<Field $field:camel>](<[<Field $field:camel Interp>] as JsonInterp<$schemaType>>::init(&self.[<field_ $field:snake>])));
+                                        $crate::interp_parser::set_from_thunk(state, || [<$name State>]::[<Field $field:camel>](<[<Field $field:camel Interp>] as ParserCommon<$schemaType>>::init(&self.[<field_ $field:snake>])));
                                     }
                                 )*
                                 ,
@@ -1047,7 +1075,7 @@ macro_rules! define_json_struct_interp {
                         })*
 
                         [<$name State>]::ValueSep if token == JsonToken::ValueSeparator => {
-                            $crate::interp_parser::set_from_thunk(state, || [<$name State>]::Key(<JsonStringAccumulate<$n> as JsonInterp<JsonString>>::init(&JsonStringAccumulate), None));
+                            $crate::interp_parser::set_from_thunk(state, || [<$name State>]::Key(<JsonStringAccumulate<$n> as ParserCommon<JsonString>>::init(&JsonStringAccumulate), None));
                         }
                         [<$name State>]::ValueSep if token == JsonToken::EndObject => {
                             $crate::interp_parser::set_from_thunk(state, || [<$name State>]::End);
@@ -1065,12 +1093,14 @@ macro_rules! define_json_struct_interp {
 
             type [<$name DropInterp>] = [<$name:camel Interp>]<$(define_json_struct_interp!{ DROP $field DropInterp } ),*>;
             const [<$name:upper _DROP_INTERP>] : [<$name DropInterp>] = [<$name DropInterp>] { $( [<field_ $field:snake>]: DropInterp ),* };
-            impl JsonInterp<[<$name Schema>] > for DropInterp where
+            impl ParserCommon<[<$name Schema>] > for DropInterp where
                 {
-                    type State = < [<$name DropInterp>] as JsonInterp<[<$name Schema>] >>::State;
-                    type Returning = < [<$name DropInterp>] as JsonInterp<[<$name Schema>] >>::Returning;
-                    fn init(&self) -> Self::State { <[<$name DropInterp>] as JsonInterp<[<$name Schema>]>>::init(&[<$name:upper _DROP_INTERP>]) }
-    #[inline(never)]
+                    type State = < [<$name DropInterp>] as ParserCommon<[<$name Schema>] >>::State;
+                    type Returning = < [<$name DropInterp>] as ParserCommon<[<$name Schema>] >>::Returning;
+                    fn init(&self) -> Self::State { <[<$name DropInterp>] as ParserCommon<[<$name Schema>]>>::init(&[<$name:upper _DROP_INTERP>]) }
+            }
+            impl JsonInterp<[<$name Schema>] > for DropInterp where {
+                #[inline(never)]
                     fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<$crate::interp_parser::OOB>> {
                         <[<$name DropInterp>] as JsonInterp<[<$name Schema>]>>::parse(&[<$name:upper _DROP_INTERP>], full_state, token, destination)
                 }
@@ -1129,16 +1159,12 @@ mod tests {
 
 
 impl<A, S: JsonInterp<A>> JsonInterp<A> for Preaction<S> {
-    type State = Option<<S as JsonInterp<A>>::State>;
-    type Returning = <S as JsonInterp<A>>::Returning;
-
-    fn init(&self) -> Self::State { None }
     #[inline(never)]
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         loop { break match state {
             None => {
                 (self.0)().ok_or(Some(OOB::Reject))?;
-                set_from_thunk(state, || Some(<S as JsonInterp<A>>::init(&self.1)));
+                set_from_thunk(state, || Some(<S as ParserCommon<A>>::init(&self.1)));
                 continue;
             }
             Some(ref mut s) => <S as JsonInterp<A>>::parse(&self.1, s, token, destination)
