@@ -303,7 +303,7 @@ impl<A, R, S : ParserCommon<A>> ParserCommon<A> for Action<S, fn(&<S as ParserCo
     type State = (<S as ParserCommon<A> >::State, Option<<S as ParserCommon<A> >::Returning>);
     type Returning = R;
 
-    #[inline(never)]
+    // #[inline(never)] // Causes stack size increase
     fn init(&self) -> Self::State {
         (<S as ParserCommon<A>>::init(&self.0), None)
     }
@@ -644,7 +644,7 @@ pub enum PairState<A, B> {
 impl<A : ParserCommon<C>, B : ParserCommon<D>, C, D> ParserCommon<(C, D)> for (A, B) {
     type State = PairState<<A as ParserCommon<C>>::State, <B as ParserCommon<D>>::State>;
     type Returning = (Option<A::Returning>, Option<B::Returning>);
-    #[inline(never)]
+    // #[inline(never)] // Causes stack size increase
     fn init(&self) -> Self::State {
         PairState::Init
     }
@@ -777,7 +777,7 @@ impl<IFun : Fn () -> X, N, I, S : ParserCommon<I>, X, F: Fn(&mut X, &[u8])->()> 
     <DefaultInterp as ParserCommon<N>>::Returning: Copy {
     type State=LengthFallbackParserState<<DefaultInterp as ParserCommon<N>>::State, Option<<DefaultInterp as ParserCommon<N>>::Returning>, <S as ParserCommon<I>>::State>;
     type Returning = (Option<<S as ParserCommon<I>>::Returning>, X);
-    #[inline(never)]
+    // #[inline(never)] // Causes stack size increase
     fn init(&self) -> Self::State {
         LengthFallbackParserState::Length(<DefaultInterp as ParserCommon<N>>::init(&DefaultInterp), None)
     }
