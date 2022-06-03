@@ -1,25 +1,33 @@
 [unstable]
-build-std = ["core"]
+# build-std = ["core"]
+configurable-env = true
 
 [target.thumbv6m-none-eabi]
 rustflags = [ 
   "-C", "relocation-model=ropi",
   "-C", "link-arg=-Tscript.ld",
-  "-Z", "emit-stack-sizes",
-  "--cfg", "target_os=\"nanos\"",
   "-C", "opt-level=3",
-  "-C", "link-arg=--target=thumbv6m-none-eabi",
   "-C", "passes=ledger-ropi",
+  "-C", "codegen-units=1",
+  "-C", "lto",
+  "-C", "embed-bitcode",
+  "--emit=obj,llvm-ir,llvm-bc",
   "--cfg", "target_os=\"nanos\"",
-  "--emit=llvm-ir"
+  "-Z", "macro-backtrace"
+#  "-Z", "print-type-sizes",
 ]
-linker = "clang"
-runner = "speculos --display headless -k 2.0"
+linker = "armv6m-unknown-none-eabi-clang"
+runner = "./speculos-wrapper -k 2.0"
 
 [build]
-target = "thumbv6m-none-eabi"
-# target = "x86_64-unknown-linux-gnu"
+# target = "thumbv6m-none-eabi"
+# rustdocflags = [ "--cfg", "target_os=\"nanos\"" ]
 
 [alias]
+tt = "test --features extra_debug"
 br = "build --release"
-stackcheck = "stack-sizes --release --bin rust-app --target=thumbv6m-none-eabi"
+stackcheck = "stack-sizes --release --bin pocket --target=thumbv6m-none-eabi"
+unit = "test --features=speculos -Z build-std=core --lib"
+
+[env]
+RUST_TEST_THREADS="1"

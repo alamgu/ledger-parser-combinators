@@ -76,3 +76,7 @@ pub struct LengthLimited<S> {
 /// Confer: LengthFallback
 #[derive(Clone)]
 pub struct ObserveLengthedBytes<I : Fn () -> X, X, F, S>(pub I, pub F, pub S, pub bool);
+
+
+pub struct Buffer<const N: usize>;
+

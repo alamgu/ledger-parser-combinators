@@ -3,10 +3,13 @@
 #![feature(bindings_after_at)]
 #![feature(const_generics)]
 #![feature(min_type_alias_impl_trait)]
+#![feature(min_specialization)]
 #![feature(generic_associated_types)]
 #![feature(auto_traits)]
 #![feature(negative_impls)]
 #![feature(member_constraints)]
+#![feature(trace_macros)]
+#![feature(log_syntax)]
 #![cfg_attr(all(target_os="nanos", test), no_main)]
 #![cfg_attr(target_os="nanos", feature(custom_test_frameworks))]
 #![reexport_test_harness_main = "test_main"]
@@ -15,6 +18,8 @@
 #[macro_use]
 extern crate enum_init;
 
+#[macro_use]
+extern crate num_derive;
 
 //#[cfg(all(not(target_os = "linux"), test))]
 //use nanos_sdk::exit_app;
@@ -67,3 +72,5 @@ pub mod json;
 pub mod json_interp;
 
 pub mod async_parser;
+
+pub mod protobufs;
