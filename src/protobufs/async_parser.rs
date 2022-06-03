@@ -9,12 +9,91 @@ pub use num_traits::FromPrimitive;
 
 trait IsLengthDelimited { }
 
-struct VarInt32;
-
-impl HasOutput<Varint> for VarInt32 {
-    type Output = u32;
+fn parse_varint<'a: 'c, 'c, T, BS: Readable>(input: &'a mut BS) -> impl Future<Output = T> + 'c where
+    T: Default + core::ops::Shl<Output = T> + core::ops::AddAssign + core::convert::From<u8>
+{
+    async move {
+        let mut accumulator : T = Default::default();
+        let mut n : u8 = 0;
+        loop {
+            let [current] : [u8; 1] = input.read().await;
+            // Check that adding this base-128 digit will not overflow
+            if 0 != ((current & 0x7f) >> (core::mem::size_of::<T>()*8 - (7*n as usize))) {
+                reject().await
+            }
+            accumulator += core::convert::Into::<T>::into(current) << core::convert::From::from(7*n as u8);
+            n += 1;
+            if current & 0x80 == 0 {
+                return accumulator;
+            }
+        }
+    }
 }
 
+fn skip_varint<'a: 'c, 'c, BS: Readable>(input: &'a mut BS) -> impl Future<Output = ()> + 'c where
+{
+    async move {
+        loop {
+            let [current] : [u8; 1] = input.read().await;
+            if current & 0x80 == 0 {
+                return ();
+            }
+        }
+    }
+}
+
+macro_rules! VarintPrimitive {
+    { $name:ident : $returning:ty : $v:ident => $($decode:tt)* } =>
+    { $crate::protobufs::async_parser::paste! {
+        impl HasOutput<[<$name:camel>]> for DefaultInterp {
+            type Output = $returning;
+        }
+
+        impl<BS: Readable> AsyncParser<[<$name:camel>], BS> for DefaultInterp {
+            type State<'c> = impl Future<Output = Self::Output>;
+            fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
+                async move {
+                    let $v = parse_varint::<'a, 'c, $returning, BS>(input).await;
+                    $($decode)*
+                }
+            }
+        }
+        impl HasOutput<[<$name:camel>]> for DropInterp {
+            type Output = ();
+        }
+
+        impl<BS: Readable> AsyncParser<[<$name:camel>], BS> for DropInterp {
+            type State<'c> = impl Future<Output = Self::Output>;
+            fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
+                async move {
+                    parse_varint::<'a, 'c, $returning, BS>(input).await;
+                }
+            }
+        }
+    } }
+}
+
+VarintPrimitive! { int32 : i32 : x => x }
+VarintPrimitive! { int64 : i64 : x => x }
+VarintPrimitive! { uint32 : u32 : x => x }
+VarintPrimitive! { uint64 : u64 : x => x }
+VarintPrimitive! { sint32 : i32 : x => x >> 1 ^ (-(x & 1)) }
+VarintPrimitive! { sint64 : i64 : x => x >> 1 ^ (-(x & 1)) }
+
+impl HasOutput<Bool> for DefaultInterp {
+    type Output = bool;
+}
+
+impl<BS: Readable> AsyncParser<Bool, BS> for DefaultInterp {
+    type State<'c> = impl Future<Output = Self::Output>;
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
+        async move {
+            parse_varint::<'a, 'c, u16, BS>(input).await == 1
+        }
+    }
+}
+
+/*
 impl<BS: Readable> AsyncParser<Varint, BS> for VarInt32 {
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
@@ -57,6 +136,7 @@ impl<BS: Readable> AsyncParser<Varint, BS> for DropInterp {
     }
     type State<'c> = impl Future<Output = Self::Output>;
 }
+*/
 
 impl HasOutput<Fixed64> for DefaultInterp {
     type Output = [u8; 8];
@@ -126,10 +206,10 @@ impl<BS: 'static + Readable> Readable for TrackLength<BS> {
 
 pub async fn skip_field<BS: Readable>(fmt: ProtobufWire, i: &mut BS) {
     match fmt {
-        ProtobufWire::Varint => { <DropInterp as AsyncParser<Varint, BS>>::parse(&DropInterp, i).await; }
+        ProtobufWire::Varint => { skip_varint::<'_, '_, BS>(i).await } // <DropInterp as AsyncParser<Varint, BS>>::parse(&DropInterp, i).await; }
         ProtobufWire::Fixed64Bit => { i.read::<8>().await; }
         ProtobufWire::LengthDelimited => {
-            let len = <VarInt32 as AsyncParser<Varint, BS>>::parse(&VarInt32, i).await;
+            let len = <DefaultInterp as AsyncParser<Int32, BS>>::parse(&DefaultInterp, i).await;
             for _ in [0..len] {
                 i.read::<1>().await;
             }
@@ -157,7 +237,7 @@ macro_rules! define_message {
         define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (LengthDelimitedParser, Bytes) = $number } }
     };
     { @enrich, $name:ident { , $field:ident : string = $number:literal $($rest:tt)* } { $($body:tt)* } } => {
-        define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (LengthDelimitedParser, ProtoString) = $number } }
+        define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (LengthDelimitedParser, String) = $number } }
     };
     { @enrich, $name:ident { , $field:ident: enum($schemaType:ty) = $number:literal $($rest:tt)* } { $($body:tt)* } } => {
         define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (AsyncParser, $schemaType) = $number } }
@@ -173,7 +253,7 @@ macro_rules! define_message {
             pub struct [<$name Interp>]<$([<Field $field:camel>]),*> {
                 $(pub [<field_ $field:snake>] : [<Field $field:camel>] ),*
             }
-            
+
             pub struct [<$name:camel>];
 
             impl<$([<Field $field:camel Interp>] : HasOutput<[<$schemaType:camel>]>),*> HasOutput<[<$name:camel>]> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
@@ -193,7 +273,7 @@ macro_rules! define_message {
                             // Probably should check for presence of all expected fields here as
                             // well. On the other hand, fields that we specify an interpretation
                             // for are _required_.
-                            let tag = VarInt32.parse(&mut tl).await;
+                            let tag : u32 = parse_varint(&mut tl).await;
                             let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject().await, };
                             skip_field(wire, &mut tl).await;
                             if tl.1 == length {
@@ -206,7 +286,7 @@ macro_rules! define_message {
                         $(
                             let mut tl = TrackLength(input.clone(), 0);
                             loop {
-                                let tag = VarInt32.parse(&mut tl).await;
+                                let tag : u32 = parse_varint(&mut tl).await;
                                 let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject().await, };
                                 if tag >> 3 == $number {
                                     if wire != [<$schemaType:camel>]::FORMAT {
@@ -234,7 +314,7 @@ macro_rules! define_message {
         $($p)*.parse(&mut $tl).await;
     };
     { @call_parser_for, LengthDelimitedParser, $tl:ident, $($p:tt)* } => { {
-       let length = VarInt32.parse(&mut $tl).await as usize;
+       let length : usize = parse_varint(&mut $tl).await;
        $($p)*.parse(&mut $tl, length).await;
     } };
 }
@@ -253,7 +333,7 @@ macro_rules! define_enum {
             impl HasOutput<$name> for DefaultInterp {
                 type Output = $name;
             }
-            
+
             impl ProtobufWireFormat for [<$name:camel>] {
                 const FORMAT: ProtobufWire = ProtobufWire::Varint;
             }
@@ -261,7 +341,7 @@ macro_rules! define_enum {
             impl<BS: Readable> AsyncParser<$name, BS> for DefaultInterp {
                 fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
                     async move {
-                        match $name::from_u32(VarInt32.parse(input).await) {
+                        match $name::from_u32(Int32.parse(input).await) {
                             None => reject().await,
                             Some(a) => a,
                         }
@@ -273,14 +353,22 @@ macro_rules! define_enum {
     }
 }
 
+
 #[cfg(test)]
 mod test {
     trace_macros!(true);
     define_message! { OtherMessage { foo: bytes = 0 } }
     define_message! { SimpleMessage { foo: message(otherMessage) = 0, bar: enum(SimpleEnum) = 1 } }
     define_enum! { SimpleEnum { default = 0, noodle = 1 } }
+    define_message! {
+        SignDoc {
+            body_bytes: bytes = 1,
+            auth_info_bytes: bytes = 2,
+            chain_id: string = 3,
+            account_number: uint64 = 4
+        }}
     trace_macros!(false);
-    
+
     #[test]
     fn test_parser() {
 

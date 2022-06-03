@@ -15,12 +15,31 @@ pub trait ProtobufWireFormat {
     const FORMAT: ProtobufWire;
 }
 
-// Varint
-pub struct Varint;
+macro_rules! VarintPrimitive {
+    { $name:ident } =>
+    { $crate::protobufs::async_parser::paste! {
+        pub struct [<$name:camel>];
+        impl ProtobufWireFormat for [<$name:camel>] {
+            const FORMAT: ProtobufWire = ProtobufWire::Varint;
+        }
+    } }
+}
 
+VarintPrimitive! { int32 }
+VarintPrimitive! { int64 }
+VarintPrimitive! { uint32 }
+VarintPrimitive! { uint64 }
+VarintPrimitive! { sint32 }
+VarintPrimitive! { sint64 }
+VarintPrimitive! { bool }
+
+// Varint
+// pub struct Varint;
+/*
 impl ProtobufWireFormat for Varint {
     const FORMAT: ProtobufWire = ProtobufWire::Varint;
 }
+*/
 
 // 64 Bit
 pub struct Fixed64;
@@ -28,8 +47,8 @@ impl ProtobufWireFormat for Fixed64 {
     const FORMAT: ProtobufWire = ProtobufWire::Fixed64Bit;
 }
 
-pub struct SFixed64;
-impl ProtobufWireFormat for SFixed64 {
+pub struct Sfixed64;
+impl ProtobufWireFormat for Sfixed64 {
     const FORMAT: ProtobufWire = ProtobufWire::Fixed64Bit;
 }
 
@@ -61,8 +80,8 @@ pub struct Fixed32;
 impl ProtobufWireFormat for Fixed32 {
     const FORMAT: ProtobufWire = ProtobufWire::Fixed32Bit;
 }
-pub struct SFixed32;
-impl ProtobufWireFormat for SFixed32 {
+pub struct Sfixed32;
+impl ProtobufWireFormat for Sfixed32 {
     const FORMAT: ProtobufWire = ProtobufWire::Fixed32Bit;
 }
 pub struct Float;
