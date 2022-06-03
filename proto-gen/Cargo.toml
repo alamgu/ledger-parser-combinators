@@ -3,10 +3,18 @@ name = "proto-gen"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+path = "src/lib.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 protobuf = "3.0"
+tempfile = "3.3"
 
 [build-dependencies]
 protobuf-codegen = "3.0"
+
+[[bin]]
+name = "proto-build-foo"
+path = "src/bin/main.rs"
+
