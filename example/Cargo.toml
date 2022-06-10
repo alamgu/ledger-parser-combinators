@@ -1,13 +1,12 @@
 [package]
-name = "proto-gen"
+name = "example"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-protobuf = "3.0"
-tempfile = "3.3"
+
 
 [build-dependencies]
-protobuf-codegen = "3.0"
+proto-gen = { path = "../proto-gen" }

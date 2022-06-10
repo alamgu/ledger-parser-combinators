@@ -1,5 +1,6 @@
 [workspace]
 members = [
   "parser-combinators",
-  "proto-gen"
+  "proto-gen",
+  "example"
 ]
