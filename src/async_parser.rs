@@ -191,11 +191,11 @@ impl<N, I, const M: usize, BS: Readable> AsyncParser<DArray<N, I, M>, BS> for Dr
     }
 }
 
-impl<T, S: HasOutput<T>, R> HasOutput<T> for Action<S, fn(<S as HasOutput<T>>::Output) -> Option<R>> {
+impl<T, S: HasOutput<T>, R, F: Fn(<S as HasOutput<T>>::Output) -> Option<R>> HasOutput<T> for Action<S, F> {
     type Output = R;
 }
 
-impl<T, S: AsyncParser<T, BS>, R, BS: Readable> AsyncParser<T, BS> for Action<S, fn(<S as HasOutput<T>>::Output) -> Option<R>> {
+impl<T, S: AsyncParser<T, BS>, R, F: Fn(<S as HasOutput<T>>::Output) -> Option<R>, BS: Readable> AsyncParser<T, BS> for Action<S, F> {
     type State<'c> = impl Future<Output = Self::Output>;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
