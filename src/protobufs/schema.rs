@@ -1,6 +1,6 @@
 use core::ops::Mul;
 
-#[derive(FromPrimitive, PartialEq)]
+#[derive(FromPrimitive, PartialEq, Debug)]
 #[repr(u8)]
 pub enum ProtobufWire {
     Varint = 0,

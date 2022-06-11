@@ -18,10 +18,10 @@ fn parse_varint<'a: 'c, 'c, T, BS: Readable>(input: &'a mut BS) -> impl Future<O
         loop {
             let [current] : [u8; 1] = input.read().await;
             // Check that adding this base-128 digit will not overflow
-            if 0 != ((current & 0x7f) >> (core::mem::size_of::<T>()*8 - (7*n as usize))) {
+            if 7*n as usize > (core::mem::size_of::<T>()-1)*8 && 0 != ((current & 0x7f) >> (core::mem::size_of::<T>()*8 - (7*n as usize))) {
                 reject().await
             }
-            accumulator += core::convert::Into::<T>::into(current) << core::convert::From::from(7*n as u8);
+            accumulator += core::convert::Into::<T>::into(current & 0x7f) << core::convert::From::from(7*n as u8);
             n += 1;
             if current & 0x80 == 0 {
                 return accumulator;
@@ -58,9 +58,6 @@ macro_rules! VarintPrimitive {
                 }
             }
         }
-        impl HasOutput<[<$name:camel>]> for DropInterp {
-            type Output = ();
-        }
 
         impl<BS: Readable> AsyncParser<[<$name:camel>], BS> for DropInterp {
             type State<'c> = impl Future<Output = Self::Output>;
@@ -93,51 +90,6 @@ impl<BS: Readable> AsyncParser<Bool, BS> for DefaultInterp {
     }
 }
 
-/*
-impl<BS: Readable> AsyncParser<Varint, BS> for VarInt32 {
-    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
-        async move {
-            let mut accumulator : u32 = 0;
-            let mut n : u8 = 0;
-            loop {
-                let [current] : [u8; 1] = input.read().await;
-                if n == 4 && current > 0x0f {
-                    reject().await
-                }
-                accumulator += (current as u32) << 7*n;
-                n += 1;
-                if current & 0x80 == 0 {
-                    return accumulator;
-                }
-            }
-        }
-    }
-    type State<'c> = impl Future<Output = Self::Output>;
-}
-
-impl HasOutput<Varint> for DropInterp {
-    type Output = ();
-}
-impl<BS: Readable> AsyncParser<Varint, BS> for DropInterp {
-    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
-        async move {
-            let mut n : u8 = 0;
-            loop {
-                let [current] : [u8; 1] = input.read().await;
-                if n == 4 && current > 0x0f {
-                    reject().await
-                }
-                n += 1;
-                if current & 0x80 == 0 {
-                    return ()
-                }
-            }
-        }
-    }
-    type State<'c> = impl Future<Output = Self::Output>;
-}
-*/
-
 impl HasOutput<Fixed64> for DefaultInterp {
     type Output = [u8; 8];
 }
@@ -154,6 +106,30 @@ impl<BS: Readable> AsyncParser<Fixed64, BS> for DefaultInterp {
 trait LengthDelimitedParser<Schema, BS: Readable> : HasOutput<Schema>{
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c>;
     type State<'c>: Future<Output = Self::Output>;
+}
+
+
+impl<T, S: LengthDelimitedParser<T, BS>, R, BS: Readable, F: Fn(<S as HasOutput<T>>::Output) -> Option<R>> LengthDelimitedParser<T, BS> for Action<S, F> {
+    type State<'c> = impl Future<Output = Self::Output>;
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
+        async move {
+            match self.1(self.0.parse(input, length).await) {
+                Some(a) => a,
+                None => reject().await,
+            }
+        }
+    }
+}
+
+impl<Schema, BS: Readable> LengthDelimitedParser<Schema, BS> for DropInterp {
+    type State<'c> = impl Future<Output = Self::Output>;
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
+        async move {
+            for _ in 0..length {
+                let [_]: [u8; 1] = input.read().await;
+            }
+        }
+    }
 }
 
 impl<const N : usize> HasOutput<String> for Buffer<N> {
@@ -194,6 +170,7 @@ impl<const FIELD_NUMBER: u32, Schema: ProtobufWireFormat, Value: HasOutput<Schem
     type Output = Value::Output;
 }
 
+#[derive(Clone)]
 struct TrackLength<BS: Readable>(BS, usize);
 
 impl<BS: 'static + Readable> Readable for TrackLength<BS> {
@@ -210,7 +187,7 @@ pub async fn skip_field<BS: Readable>(fmt: ProtobufWire, i: &mut BS) {
         ProtobufWire::Fixed64Bit => { i.read::<8>().await; }
         ProtobufWire::LengthDelimited => {
             let len = <DefaultInterp as AsyncParser<Int32, BS>>::parse(&DefaultInterp, i).await;
-            for _ in [0..len] {
+            for _ in 0..len {
                 i.read::<1>().await;
             }
         }
@@ -220,35 +197,52 @@ pub async fn skip_field<BS: Readable>(fmt: ProtobufWire, i: &mut BS) {
     }
 }
 
+pub struct BytesAsMessage<Schema, M: HasOutput<Schema>>(Schema, M);
+
+impl<Schema, M: HasOutput<Schema>> HasOutput<Bytes> for BytesAsMessage<Schema, M> {
+    type Output = M::Output;
+}
+
+impl<Schema, M: LengthDelimitedParser<Schema, BS>, BS: Readable> LengthDelimitedParser<Bytes, BS> for BytesAsMessage<Schema, M> {
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
+        self.1.parse(input, length)
+    }
+    type State<'c> = impl Future<Output = Self::Output>;
+}
+
+
 pub use paste::paste;
 
 #[macro_export]
 macro_rules! define_message {
-    { $name:ident { $($field:ident : $schemaType:tt $(($schemaParams:tt))* = $number:literal),* } } => {
-        define_message!{ @enrich, $name { , $($field : $schemaType$(($schemaParams))* = $number),* } { } }
+    { $name:ident { $($field:ident : $schemaType:tt $(($($schemaParams:tt)*))* = $number:literal),* } } => {
+        define_message!{ @enrich, $name { , $($field : $schemaType$(($($schemaParams)*))* = $number),* } { } }
     };
     { @enrich, $name:ident { , $field:ident : message($schemaType:tt) = $number:literal $($rest:tt)* } { $($body:tt)* } } => {
-        define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (LengthDelimitedParser, $schemaType) = $number } }
+        define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (LengthDelimitedParser, $schemaType, false) = $number } }
+    };
+    { @enrich, $name:ident { , $field:ident : repeated(message($schemaType:tt)) = $number:literal $($rest:tt)* } { $($body:tt)* } } => {
+        define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (LengthDelimitedParser, $schemaType, true) = $number } }
     };
     { @enrich, $name:ident { , $field:ident : packed($schemaType:tt) = $number:literal $($rest:tt)* } { $($body:tt)* } } => {
-        define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (LengthDelimitedParser, $schemaType) = $number } }
+        define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (LengthDelimitedParser, $schemaType, true) = $number } }
     };
     { @enrich, $name:ident { , $field:ident : bytes = $number:literal $($rest:tt)* } { $($body:tt)* } } => {
-        define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (LengthDelimitedParser, Bytes) = $number } }
+        define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (LengthDelimitedParser, Bytes, false) = $number } }
     };
     { @enrich, $name:ident { , $field:ident : string = $number:literal $($rest:tt)* } { $($body:tt)* } } => {
-        define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (LengthDelimitedParser, String) = $number } }
+        define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (LengthDelimitedParser, String, false) = $number } }
     };
     { @enrich, $name:ident { , $field:ident: enum($schemaType:ty) = $number:literal $($rest:tt)* } { $($body:tt)* } } => {
-        define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (AsyncParser, $schemaType) = $number } }
+        define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (AsyncParser, $schemaType, false) = $number } }
     };
     { @enrich, $name:ident { , $field:ident: $schemaType:ty = $number:literal $($rest:tt)* } { $($body:tt)* } } => {
-        define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (AsyncParser, $schemaType) = $number } }
+        define_message!{ @enrich, $name { $($rest)* } { $($body)*, $field: (AsyncParser, $schemaType, false) = $number } }
     };
     { @enrich, $name:ident { } { $($body:tt)* } } => {
         define_message!{ @impl $name { $($body)* } }
     };
-    { @impl $name:ident { , $($field:ident : ($parseTrait:ident, $schemaType:ty) = $number:literal),* } } => {
+    { @impl $name:ident { , $($field:ident : ($parseTrait:ident, $schemaType:ty, $repeated:literal) = $number:literal),* } } => {
         $crate::protobufs::async_parser::paste! {
             pub struct [<$name Interp>]<$([<Field $field:camel>]),*> {
                 $(pub [<field_ $field:snake>] : [<Field $field:camel>] ),*
@@ -256,7 +250,7 @@ macro_rules! define_message {
 
             pub struct [<$name:camel>];
 
-            impl<$([<Field $field:camel Interp>] : HasOutput<[<$schemaType:camel>]>),*> HasOutput<[<$name:camel>]> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
+            impl<$([<Field $field:camel Interp>] : HasOutput<[<$schemaType:camel>], Output=()>),*> HasOutput<[<$name:camel>]> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
                 type Output = ();
             }
 
@@ -264,7 +258,7 @@ macro_rules! define_message {
                 const FORMAT: ProtobufWire = ProtobufWire::LengthDelimited;
             }
 
-            impl<BS: 'static + Clone + Readable,$([<Field $field:camel Interp>] : $parseTrait<[<$schemaType:camel>], TrackLength<BS>>),*> LengthDelimitedParser<[<$name:camel>], BS> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
+            impl<BS: 'static + Clone + Readable,$([<Field $field:camel Interp>] : HasOutput<[<$schemaType:camel>], Output=()> + $parseTrait<[<$schemaType:camel>], TrackLength<BS>>),*> LengthDelimitedParser<[<$name:camel>], BS> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
                 fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
                     async move {
                         // First, structural check:
@@ -285,6 +279,7 @@ macro_rules! define_message {
                         }
                         $(
                             let mut tl = TrackLength(input.clone(), 0);
+                            let mut seen = false;
                             loop {
                                 let tag : u32 = parse_varint(&mut tl).await;
                                 let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject().await, };
@@ -293,10 +288,19 @@ macro_rules! define_message {
                                         return reject().await;
                                     }
                                     define_message! { @call_parser_for, $parseTrait, tl, self.[<field_ $field:snake>] }
-                                    break;
+                                    if(seen && ! $repeated) {
+                                        // Rejecting because of multiple fields on non-repeating;
+                                        // protobuf spec says we should "take the last value" but
+                                        // our flow doesn't permit this.
+                                        return reject().await;
+                                    }
+                                    seen = true;
                                 } else {
                                     skip_field(wire, &mut tl).await;
                                     // Skip it
+                                }
+                                if tl.1 == length {
+                                    break;
                                 }
                                 if tl.1 >= length {
                                     return reject().await;
@@ -341,7 +345,7 @@ macro_rules! define_enum {
             impl<BS: Readable> AsyncParser<$name, BS> for DefaultInterp {
                 fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
                     async move {
-                        match $name::from_u32(Int32.parse(input).await) {
+                        match $name::from_u32(parse_varint(input).await) {
                             None => reject().await,
                             Some(a) => a,
                         }
@@ -353,10 +357,122 @@ macro_rules! define_enum {
     }
 }
 
+/*
+// Any handler: take a list of
+pub struct AnyOf<T: HList>(T);
+
+impl<T> HasOutput<Any> for AnyOf<T> {
+    type Output = ();
+}
+
+impl LengthDelimitedParser<Any> for AnyOf<T> {
+    type State<'c> = impl Future<Output = Self::Output>;
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
+        {
+            let mut tl = TrackLength(input.clone(), 0);
+            let mut seen = false;
+            loop {
+                let tag : u32 = parse_varint(&mut tl).await;
+                let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject().await, };
+                if tag >> 3 == 1 {
+                    if wire != ProtobufWire::LengthDelimited {
+                        println!("Incorrect format: reject");
+                        return reject().await;
+                    }
+                    let length : usize = parse_varint(&mut tl).await;
+                    
+                    define_message! { @call_parser_for, $parseTrait, tl, self.[<field_ $field:snake>] }
+                    if(seen && ! $repeated) {
+                        // Rejecting because of multiple fields on non-repeating;
+                        // protobuf spec says we should "take the last value" but
+                        // our flow doesn't permit this.
+                        return reject().await;
+                    }
+                    seen = true;
+                } else {
+                    println!("Not current field; skipping");
+                    skip_field(wire, &mut tl).await;
+                    // Skip it
+                }
+                if tl.1 == length {
+                    break;
+                }
+                if tl.1 >= length {
+                    println!("Message off end; rejecting.");
+                    return reject().await;
+                }
+            }
+        }
+        
+    }
+}
+*/
 
 #[cfg(test)]
 mod test {
-    trace_macros!(true);
+    use super::*;
+    use core::future::Future;
+    pub use num_traits::FromPrimitive;
+    // trace_macros!(true);
+    // trace_macros!(false);
+
+    #[derive(Clone)]
+    struct TestReadable<const N: usize>([u8; N], usize);
+    impl<const M: usize> Readable for TestReadable<M> {
+        type OutFut<'a, const N: usize> = impl 'a + Future<Output = [u8; N]>;
+        fn read<'a: 'b, 'b, const N: usize>(&'a mut self) -> Self::OutFut<'b, N> {
+            if self.1 + N <= self.0.len() {
+                let offset = self.1;
+                self.1+=N;
+                use core::convert::TryInto;
+                core::future::ready(self.0[offset..self.1].try_into().unwrap())
+            } else {
+                panic!("Read past end of input");
+            }
+        }
+    }
+
+    use core::task::*;
+
+    static RAW_WAKER_VTABLE : RawWakerVTable = RawWakerVTable::new(|a| RawWaker::new(a, &RAW_WAKER_VTABLE), |_| {}, |_| {}, |_| {});
+
+    fn poll_once<F: Future>(mut input: F) -> core::task::Poll<F::Output> {
+        let waker = unsafe { Waker::from_raw(RawWaker::new(&(), &RAW_WAKER_VTABLE)) };
+        let mut ctxd = Context::from_waker(&waker);
+        let mut pinned = unsafe { core::pin::Pin::new_unchecked(&mut input) };
+        pinned.as_mut().poll(&mut ctxd)
+    }
+
+    #[test]
+    fn test_varint() {
+        let mut input = TestReadable([0,0,0],0);
+        assert_eq!(poll_once(Int32.def_parse(&mut input)), Poll::Ready(0));
+        let mut input = TestReadable([255,0,0],0);
+        assert_eq!(poll_once(Int32.def_parse(&mut input)), Poll::Ready(127));
+        let mut input = TestReadable([254,0,0],0);
+        assert_eq!(poll_once(Sint32.def_parse(&mut input)), Poll::Ready(63));
+        let mut input = TestReadable([255,0,0],0);
+        assert_eq!(poll_once(Sint32.def_parse(&mut input)), Poll::Ready(-64));
+        let mut input = TestReadable([0,0,0],0);
+        assert_eq!(poll_once(Sint32.def_parse(&mut input)), Poll::Ready(0));
+        let mut input = TestReadable([1,0,0],0);
+        assert_eq!(poll_once(Sint32.def_parse(&mut input)), Poll::Ready(-1));
+        let mut input = TestReadable([2,0,0],0);
+        assert_eq!(poll_once(Sint32.def_parse(&mut input)), Poll::Ready(1));
+        let mut input = TestReadable([128,128,128,128,2,0,0],0);
+        assert_eq!(poll_once(Int32.def_parse(&mut input)), Poll::Ready(1<<(7*4+1)));
+        let mut input = TestReadable([128,128,128,128,2,0,0],0);
+        assert_eq!(poll_once(Sint32.def_parse(&mut input)), Poll::Ready((1<<(7*4+1))/2));
+    }
+
+    #[test]
+    fn test_bytes() {
+        let mut input = TestReadable([1,2,3,4,5],0);
+        if let Poll::Ready(res) = poll_once(<Buffer<10> as LengthDelimitedParser<Bytes, TestReadable<5>>>::parse(&Buffer::<10>, &mut input, 5)) {
+            assert_eq!(&res[..], &[1,2,3,4,5]);
+        } else { assert_eq!(true, false) }
+    }
+
     define_message! { OtherMessage { foo: bytes = 0 } }
     define_message! { SimpleMessage { foo: message(otherMessage) = 0, bar: enum(SimpleEnum) = 1 } }
     define_enum! { SimpleEnum { default = 0, noodle = 1 } }
@@ -367,11 +483,75 @@ mod test {
             chain_id: string = 3,
             account_number: uint64 = 4
         }}
-    trace_macros!(false);
+
+    define_message! {
+        Any {
+            type_url: string = 1,
+            value: bytes = 2
+        }
+    }
+    define_message! {
+        TxBody {
+            messages: repeated(message(Any)) = 1,
+            memo: string = 2,
+            timeout_height: int64 = 3,
+            extension_options: repeated(message(Any)) = 1023
+        }
+    }
 
     #[test]
-    fn test_parser() {
+    fn test_messages() {
+        let mut input = TestReadable([(0<<3)+2,2,0,1],0);
+        let cell = core::cell::RefCell::new(0);
+        let interp = OtherMessageInterp {
+            field_foo: Action(Buffer::<5>, |a: ArrayVec<u8, 5>| { *cell.borrow_mut()+=a.len() as u64; Some(()) }),
+        };
+        if let Poll::Ready(res) = poll_once(interp.parse(&mut input, 4)) {
+            assert_eq!(res, ());
+            assert_eq!(cell.into_inner(), 2);
+        } else { assert!(false, "Failed to parse") }
 
+        let mut input = TestReadable([(1<<3)+2,2,0,1,(2<<3)+2,0,(3<<3)+2,0,(4<<3),4],0);
+        let cell = core::cell::RefCell::new(0);
+        let interp = SignDocInterp {
+            field_body_bytes: Action(Buffer::<5>, |a: ArrayVec<u8, 5>| { *cell.borrow_mut()+=a.len() as u64; Some(()) }),
+            field_auth_info_bytes: DropInterp, // Action(Buffer::<5>, |_| Some(())),
+            field_chain_id: Action(Buffer::<5>, |_| Some(())),
+            field_account_number: Action(DefaultInterp, |a| { *cell.borrow_mut()+=a; Some(()) })
+        };
+        if let Poll::Ready(res) = poll_once(interp.parse(&mut input, 10)) {
+            assert_eq!(res, ());
+            assert_eq!(cell.into_inner(), 6);
+        } else { assert!(false, "Failed to parse") }
+
+        let mut input = TestReadable([(1<<3)+2,2,0,1,(2<<3)+2,0,(3<<3)+2,0,(4<<3),4],0);
+        let cell = core::cell::RefCell::new(0);
+        let interp = BytesAsMessage(SignDoc, SignDocInterp {
+            field_body_bytes: Action(Buffer::<5>, |a: ArrayVec<u8, 5>| { *cell.borrow_mut()+=a.len() as u64; Some(()) }),
+            field_auth_info_bytes: DropInterp, // Action(Buffer::<5>, |_| Some(())),
+            field_chain_id: Action(Buffer::<5>, |_| Some(())),
+            field_account_number: Action(DefaultInterp, |a| { *cell.borrow_mut()+=a; Some(()) })
+        });
+        if let Poll::Ready(res) = poll_once(interp.parse(&mut input, 10)) {
+            assert_eq!(res, ());
+            assert_eq!(cell.into_inner(), 6);
+        } else { assert!(false, "Failed to parse") }
+
+
+        // Testing embedding of Message in Bytes field
+        let mut input = TestReadable([(1<<3)+2,2,2,0,(2<<3)+2,0,(3<<3)+2,0,(4<<3),4],0);
+        let cell = core::cell::RefCell::new(0);
+        let interp = SignDocInterp {
+            field_body_bytes:
+                 BytesAsMessage(OtherMessage, OtherMessageInterp { field_foo: Action(Buffer::<5>, |_| { *cell.borrow_mut()+=5; Some(()) }) }),
+            field_auth_info_bytes: DropInterp, // Action(Buffer::<5>, |_| Some(())),
+            field_chain_id: Action(Buffer::<5>, |_| Some(())),
+            field_account_number: Action(DefaultInterp, |a| { *cell.borrow_mut()+=a; Some(()) })
+        };
+        if let Poll::Ready(res) = poll_once(interp.parse(&mut input, 10)) {
+            assert_eq!(res, ());
+            assert_eq!(cell.into_inner(), 9);
+        } else { assert!(false, "Failed to parse") }
     }
 }
 
