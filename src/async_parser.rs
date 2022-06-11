@@ -15,6 +15,20 @@ use core::future::Future;
 use core::convert::TryInto;
 use arrayvec::ArrayVec;
 
+pub trait HasDefParser<BS: Readable> where DefaultInterp: HasOutput<Self> {
+    fn def_parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c>;
+
+    /// Type synonym for the future returned by this parser.
+    type State<'c>: Future<Output = <DefaultInterp as HasOutput<Self>>::Output>;
+}
+
+impl<T, BS: Readable> HasDefParser<BS> for T where DefaultInterp: AsyncParser<T, BS> {
+    fn def_parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
+        <DefaultInterp as AsyncParser<T, BS>>::parse(&DefaultInterp, input)
+    }
+    type State<'c> = impl Future<Output = <DefaultInterp as HasOutput<Self>>::Output>;
+}
+
 /// Reject the parse.
 pub fn reject<T>() -> impl Future<Output = T> {
     // Do some out-of-band rejection thingie
