@@ -30,7 +30,7 @@ pub trait Readable {
     fn read<'a: 'b, 'b, const N: usize>(&'a mut self) -> Self::OutFut<'b, N>;
 }
 
-pub trait HasOutput<Schema> {
+pub trait HasOutput<Schema: ?Sized> {
     type Output;
 }
 
@@ -157,7 +157,7 @@ impl<S, N, I, const M: usize, BS: Readable> AsyncParser<DArray<N, I, M>, BS> for
     }
 }
 
-impl<N, I, const M: usize> HasOutput<DArray<N, I, M>> for DropInterp {
+impl<Schema> HasOutput<Schema> for DropInterp {
     type Output = ();
 }
 
