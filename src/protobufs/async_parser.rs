@@ -357,6 +357,137 @@ macro_rules! define_enum {
     }
 }
 
+use trie_enum::TrieLookup;
+pub struct StringEnum<E: TrieLookup>(core::marker::PhantomData<E>);
+
+pub const fn string_enum<E: TrieLookup>() -> StringEnum<E> {
+    StringEnum(core::marker::PhantomData)
+}
+
+impl<E: TrieLookup> HasOutput<String> for StringEnum<E> {
+    type Output = E;
+}
+
+impl<E: 'static + TrieLookup + core::fmt::Debug, BS: Readable> LengthDelimitedParser<String, BS> for StringEnum<E> where [(); E::N]: Sized {
+    type State<'c> = impl Future<Output = Self::Output>;
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
+        async move {
+            let mut cursor = E::start();
+            for _ in 0..length {
+                let [c] = input.read().await;
+                cursor = match cursor.step(c) {
+                    None => reject().await,
+                    Some(cur) => cur
+                }
+            }
+            match cursor.get_val() {
+                None => reject().await,
+                Some(r) => *r
+            }
+        }
+    }
+}
+
+pub use trie_enum::enum_trie;
+
+#[macro_export]
+macro_rules! any_of {
+    { $name:ident { $($variant:ident : $schema:ident = $string:literal),* } } =>
+    { $crate::protobufs::async_parser::paste! {
+
+        enum_trie! { [< $name Discriminator >] { $($variant = $string),* } }
+        struct $name<$([< $variant:camel Interp >]),*>{
+            $([<$variant:snake>]: [< $variant:camel Interp >]),*
+        }
+
+        impl<O, $([< $variant:camel Interp >]: HasOutput<$schema, Output = O>),*> HasOutput<Any> for $name<$([< $variant:camel Interp >]),*>
+        {
+            type Output = O;
+        }
+
+        impl<BS: 'static + Clone + Readable, O, $([< $variant:camel Interp >]: LengthDelimitedParser<$schema, TrackLength<BS>> + HasOutput<$schema, Output = O>),*> LengthDelimitedParser<Any, BS> for $name<$([< $variant:camel Interp >]),*> {
+            type State<'c> = impl Future<Output = Self::Output>;
+            fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
+                async move {
+                    let mut tl = TrackLength(input.clone(), 0);
+                    let mut seen = false;
+                    let mut discriminator = None;
+                    loop {
+                        let tag : u32 = parse_varint(&mut tl).await;
+                        let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject().await, };
+                        if tag >> 3 == 1 {
+                            if wire != ProtobufWire::LengthDelimited {
+                                return reject().await;
+                            }
+                            if(seen) {
+                                return reject().await;
+                            }
+                            seen = true;
+                            let length : usize = parse_varint(&mut tl).await;
+                            let discrim_parse = [<$name Discriminator>]::start();
+                            for _ in 0..length {
+                                let [c] = tl.read().await;
+                                discrim_parse.step(c);
+                            }
+                            discriminator = discrim_parse.get_val();
+                        } else {
+                            skip_field(wire, &mut tl).await;
+                            // Skip it
+                        }
+                        if tl.1 == length {
+                            break;
+                        }
+                        if tl.1 >= length {
+                            return reject().await;
+                        }
+                    }
+
+                    match discriminator {
+                        None => { reject().await }
+                        $(
+                            Some([<$name Discriminator>]::$variant) => {
+                                let mut tl = TrackLength(input.clone(), 0);
+                                let mut seen = false;
+                                loop {
+                                    let tag : u32 = parse_varint(&mut tl).await;
+                                    let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject().await, };
+                                    if tag >> 3 == 2 {
+                                        if wire != [<$schema:camel>]::FORMAT {
+                                            return reject().await;
+                                        }
+                                        let length : usize = parse_varint(&mut tl).await;
+                                        self.[<$variant:snake>].parse(&mut tl, length).await;
+                                        if(seen) {
+                                            // Rejecting because of multiple fields on non-repeating;
+                                            // protobuf spec says we should "take the last value" but
+                                            // our flow doesn't permit this.
+                                            return reject().await;
+                                        }
+                                        seen = true;
+                                    } else {
+                                        skip_field(wire, &mut tl).await;
+                                        // Skip it
+                                    }
+                                    if tl.1 == length {
+                                        break;
+                                    }
+                                    if tl.1 >= length {
+                                        return reject().await;
+                                    }
+                                }
+                            }
+                        )*
+
+                    }
+
+                    return reject().await;
+
+                }
+            }
+        }
+    } }
+}
+
 /*
 // Any handler: take a list of
 pub struct AnyOf<T: HList>(T);
@@ -496,6 +627,13 @@ mod test {
             memo: string = 2,
             timeout_height: int64 = 3,
             extension_options: repeated(message(Any)) = 1023
+        }
+    }
+
+    any_of! {
+        FooAnyInterp {
+            TxBody: TxBody = b"some.uri.here",
+            SignDoc: SignDoc = b"some.other.uri.here"
         }
     }
 

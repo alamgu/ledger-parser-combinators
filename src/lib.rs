@@ -2,6 +2,8 @@
 #![allow(incomplete_features)]
 #![feature(bindings_after_at)]
 #![feature(const_generics)]
+#![feature(const_evaluatable_checked)]
+#![feature(const_fn_trait_bound)]
 #![feature(min_type_alias_impl_trait)]
 #![feature(min_specialization)]
 #![feature(generic_associated_types)]
