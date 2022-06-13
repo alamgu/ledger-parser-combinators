@@ -9,7 +9,6 @@ use proto::descriptor::FileDescriptorSet;
 use crate::proto;
 
 mod file_descriptor;
-mod descriptor;
 
 pub fn generate_rust_code(proto_file_descriptor_set: FileDescriptorSet, out_path_in_out_dir: &Path) {
     if out_path_in_out_dir.is_absolute() {
@@ -32,54 +31,10 @@ pub fn generate_rust_code(proto_file_descriptor_set: FileDescriptorSet, out_path
         .expect("Could not create new dir");
 
     for file in proto_file_descriptor_set.file {
-        let (pagkage, rust) = file.gen_rust();
+        file.gen_rust(&out_dir);
         // TODO: I dont like making empty vectors for every file.
         // I wanted to use slices of string slices. And defult to an empty slice.
         // But I had trouble doing things with Option/map/and/unwrap/to_slice
-
-        add_to_mod(&out_dir, &pagkage, rust.as_bytes());
-
-    }
-}
-
-// Add code into a module path, writing module decraltions where missing from root/mod.rs down.
-// And writing the code to a mod.rs file at the end of the mod_path
-fn add_to_mod(root: &Path, mod_path: &[&str], code: &[u8]){
-    let op = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .to_owned();
-
-    // If we have to add the code in a module relative to root
-    if let Some((new_mod, rest)) = mod_path.split_first() {
-        // Directory of the module
-        let mod_dir = root.join(new_mod);
-
-        // If the directory of the module does not exists
-        // that means its a new modules and we never included it in root's module
-        if !mod_dir.exists() {
-            // Create a directory for the new module
-            fs::create_dir(&mod_dir)
-                .expect("Could not create module dir");
-            // Include the module
-            op.open(root.join("mod.rs"))
-                .expect("Could not open module file")
-                .write_all(&format!("mod {new_mod};\n").as_bytes())
-                .expect("Could not write in module file");
-        }
-
-        // Add the code deeper in the module tree
-        // Making the new module the new root
-        // and the rest of the modules the relative path to root
-        add_to_mod(&mod_dir, rest, code);
-    }
-    // If we dont need to put the code in a module relative to root
-    else {
-        // Add the code to root
-        op.open(root.join("mod.rs"))
-            .expect("Could not open module file")
-            .write_all(code)
-            .expect("Could not write in module file");
     }
 }
 
@@ -122,18 +77,14 @@ message SignDoc {
         assert_eq!(string_from_path(&mod_dir.join("mod.rs")), "mod cosmos;\n");
         assert_eq!(string_from_path(&mod_dir.join("cosmos/mod.rs")), "mod tx;\n");
         assert_eq!(string_from_path(&mod_dir.join("cosmos/tx/mod.rs")), "mod v1beta1;\n");
-        assert_eq!(string_from_path(&mod_dir.join("cosmos/tx/v1beta1/mod.rs")), r#"// Generated from proto file: test.proto
-// Messages
-define_message! {
+        assert_eq!(string_from_path(&mod_dir.join("cosmos/tx/v1beta1/mod.rs")), r#"define_message! {
     SignDoc {
         body_bytes: bytes = 1,
         auth_info_bytes: bytes = 2,
         chain_id: string = 3,
         account_number: uint64 = 4,
-
     }
 }
-
 "#);
     }
 
@@ -148,14 +99,10 @@ message Test { }
 
         super::generate_rust_code(fds, mod_dir);
 
-        assert_eq!(string_from_path(&mod_dir.join("mod.rs")), r#"// Generated from proto file: test.proto
-// Messages
-define_message! {
+        assert_eq!(string_from_path(&mod_dir.join("mod.rs")), r#"define_message! {
     Test {
-
     }
 }
-
 "#);
     }
 
@@ -176,58 +123,8 @@ define_message! {
 
         assert_eq!(string_from_path(&mod_dir.join("mod.rs")), "mod google;\n");
         assert_eq!(string_from_path(&mod_dir.join("google/mod.rs")), "mod protobuf;\n");
-        assert_eq!(string_from_path(&mod_dir.join("google/protobuf/mod.rs")),
-r#"// Generated from proto file: google/protobuf/source_context.proto
-// Messages
-define_message! {
-    SourceContext {
-        file_name: string = 1,
-
-    }
-}
-
-// Generated from proto file: google/protobuf/any.proto
-// Messages
-define_message! {
-    Any {
-        type_url: string = 1,
-        value: bytes = 2,
-
-    }
-}
-
-// Generated from proto file: google/protobuf/type.proto
-// Dependencies
-// google/protobuf/any.proto
-// google/protobuf/source_context.proto
-
-// Messages
-define_message! {
-    Type {
-        name: string = 1,
-        fields: repeated super::super::google::protobuf::Field = 2,
-        oneofs: repeated string = 3,
-        options: repeated super::super::google::protobuf::Option = 4,
-        source_context: super::super::google::protobuf::SourceContext = 5,
-        syntax: super::super::google::protobuf::Syntax = 6,
-
-    }
-}
-define_message! {
-    Field {
-        kind: super::super::google::protobuf::Field::Kind = 1,
-        cardinality: super::super::google::protobuf::Field::Cardinality = 2,
-        number: int32 = 3,
-        name: string = 4,
-        type_url: string = 6,
-        oneof_index: int32 = 7,
-        packed: bool = 8,
-        options: repeated super::super::google::protobuf::Option = 9,
-        json_name: string = 10,
-        default_value: string = 11,
-
-// Enums
-define_enum! {
+        assert_eq!(string_from_path(&mod_dir.join("google/protobuf/Field/mod.rs")),
+r#"define_enum! {
     Kind {
         TYPE_UNKNOWN = 0,
         TYPE_DOUBLE = 1,
@@ -258,7 +155,42 @@ define_enum! {
         CARDINALITY_REPEATED = 3,
     }
 }
-
+"#);
+        assert_eq!(string_from_path(&mod_dir.join("google/protobuf/mod.rs")),
+r#"define_message! {
+    SourceContext {
+        file_name: string = 1,
+    }
+}
+define_message! {
+    Any {
+        type_url: string = 1,
+        value: bytes = 2,
+    }
+}
+define_message! {
+    Type {
+        name: string = 1,
+        fields: repeated super::super::google::protobuf::Field = 2,
+        oneofs: repeated string = 3,
+        options: repeated super::super::google::protobuf::Option = 4,
+        source_context: super::super::google::protobuf::SourceContext = 5,
+        syntax: super::super::google::protobuf::Syntax = 6,
+    }
+}
+mod Field;
+define_message! {
+    Field {
+        kind: super::super::google::protobuf::Field::Kind = 1,
+        cardinality: super::super::google::protobuf::Field::Cardinality = 2,
+        number: int32 = 3,
+        name: string = 4,
+        type_url: string = 6,
+        oneof_index: int32 = 7,
+        packed: bool = 8,
+        options: repeated super::super::google::protobuf::Option = 9,
+        json_name: string = 10,
+        default_value: string = 11,
     }
 }
 define_message! {
@@ -268,7 +200,6 @@ define_message! {
         options: repeated super::super::google::protobuf::Option = 3,
         source_context: super::super::google::protobuf::SourceContext = 4,
         syntax: super::super::google::protobuf::Syntax = 5,
-
     }
 }
 define_message! {
@@ -276,31 +207,20 @@ define_message! {
         name: string = 1,
         number: int32 = 2,
         options: repeated super::super::google::protobuf::Option = 3,
-
     }
 }
 define_message! {
     Option {
         name: string = 1,
         value: super::super::google::protobuf::Any = 2,
-
     }
 }
-
-// Enums
 define_enum! {
     Syntax {
         SYNTAX_PROTO2 = 0,
         SYNTAX_PROTO3 = 1,
     }
 }
-
-// Generated from proto file: google/protobuf/api.proto
-// Dependencies
-// google/protobuf/source_context.proto
-// google/protobuf/type.proto
-
-// Messages
 define_message! {
     Api {
         name: string = 1,
@@ -310,7 +230,6 @@ define_message! {
         source_context: super::super::google::protobuf::SourceContext = 5,
         mixins: repeated super::super::google::protobuf::Mixin = 6,
         syntax: super::super::google::protobuf::Syntax = 7,
-
     }
 }
 define_message! {
@@ -322,17 +241,14 @@ define_message! {
         response_streaming: bool = 5,
         options: repeated super::super::google::protobuf::Option = 6,
         syntax: super::super::google::protobuf::Syntax = 7,
-
     }
 }
 define_message! {
     Mixin {
         name: string = 1,
         root: string = 2,
-
     }
 }
-
 "#);
     }
 
