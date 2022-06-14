@@ -41,21 +41,23 @@ impl proto::descriptor::DescriptorProto {
         let name = self.name
             .as_ref()
             .expect("message name missing!");
-        let mut foo = Vec::from(package_path);
-        foo.push(name);
+        let rust_name = name.to_lowercase();
+
+        let mut nested_path = Vec::from(package_path);
+        nested_path.push(&rust_name);
 
         // nested_type
         //
         // Messages defined in this message
         for nested_type in &self.nested_type {
-            nested_type.gen_rust(root_dir, &foo);
+            nested_type.gen_rust(root_dir, &nested_path);
         }
 
         // enum_type
         //
         // Enums defined in this message
         for enum_type in &self.enum_type {
-            enum_type.gen_rust(root_dir, &foo);
+            enum_type.gen_rust(root_dir, &nested_path);
         }
 
         let mut code = String::new();
@@ -151,7 +153,6 @@ impl proto::descriptor::OneofDescriptorProto {
 }
 
 impl proto::descriptor::FieldDescriptorProto {
-
     fn generate_macro_code_for_field_descriptor(&self, reference_depth: usize) -> String {
         let name = self.name
             .as_ref()
@@ -167,7 +168,7 @@ impl proto::descriptor::FieldDescriptorProto {
             .as_ref()
             .expect("!!")
             .unwrap()
-            .to_string(&self.type_name, reference_depth);
+            .to_string(self.type_name.as_deref(), reference_depth);
 
         let number = self.number
             .as_ref()
@@ -175,6 +176,7 @@ impl proto::descriptor::FieldDescriptorProto {
         format!("{name}: {label}{t} = {number}")
     }
 }
+
 use proto::descriptor::field_descriptor_proto::Label;
 
 impl proto::descriptor::field_descriptor_proto::Label {
@@ -196,7 +198,7 @@ impl proto::descriptor::field_descriptor_proto::Label {
 use proto::descriptor::field_descriptor_proto::Type;
 
 impl proto::descriptor::field_descriptor_proto::Type {
-    fn to_string(&self, type_name: &Option<String>, reference_depth: usize) -> String {
+    fn to_string(&self, type_name: Option<&str>, reference_depth: usize) -> String {
         match self{
             Type::TYPE_DOUBLE => String::from("double"),
             Type::TYPE_FLOAT => String::from("float"),
@@ -214,7 +216,7 @@ impl proto::descriptor::field_descriptor_proto::Type {
             Type::TYPE_SFIXED64 => String::from("sfixed64"),
             Type::TYPE_SINT32 => String::from("sint32"),
             Type::TYPE_SINT64 => String::from("sint64"),
-            Type::TYPE_MESSAGE | Type::TYPE_ENUM => buff_type_ref_to_rust_ref(type_name.as_ref().unwrap(), reference_depth),
+            Type::TYPE_MESSAGE | Type::TYPE_ENUM => buff_type_ref_to_rust_ref(type_name.unwrap(), reference_depth),
         }
     }
 }
@@ -222,11 +224,31 @@ impl proto::descriptor::field_descriptor_proto::Type {
 use std::iter;
 
 fn buff_type_ref_to_rust_ref(buff_type_ref: &str, reference_depth: usize) -> String {
-    iter::repeat("super")
-        .take(reference_depth)
-        .chain(buff_type_ref.trim_start_matches('.').split('.'))
-        .collect::<Vec<_>>()
-        .join("::")
+    let parts = buff_type_ref
+        .split('.')
+        .collect::<Vec<&str>>();
+
+    let (last, rest) = parts
+        .split_last()
+        .expect("");
+
+    let normalized = rest
+        .iter()
+        .map(|s| s.to_lowercase())
+        .chain(iter::once(last.to_owned().into()))
+        .collect::<Vec<String>>();
+
+    if let Some((first, rest)) = normalized.split_first() {
+        if first.is_empty() {
+            let back_ref = iter::repeat("super")
+                .take(reference_depth)
+                .collect::<Vec<_>>()
+                .join("::");
+            return format!("{back_ref}::{}", rest.join("::"));
+        }
+    }
+
+    normalized.join("::")
 }
 
 use std::fs::OpenOptions;
@@ -235,7 +257,7 @@ use std::io::Write;
 
 // Add code into a module path, writing module decraltions where missing from root/mod.rs down.
 // And writing the code to a mod.rs file at the end of the mod_path
-fn add_to_mod(root: &Path, mod_path: &[&str], code: &[u8]){
+pub fn add_to_mod(root: &Path, mod_path: &[&str], code: &[u8]){
     let op = OpenOptions::new()
         .create(true)
         .append(true)
@@ -255,7 +277,7 @@ fn add_to_mod(root: &Path, mod_path: &[&str], code: &[u8]){
             // Include the module
             op.open(root.join("mod.rs"))
                 .expect("Could not open module file")
-                .write_all(&format!("mod {new_mod};\n").as_bytes())
+                .write_all(&format!("pub mod {new_mod};\n").as_bytes())
                 .expect("Could not write in module file");
         }
 

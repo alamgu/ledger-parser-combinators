@@ -1,5 +1,5 @@
-mod google {
-    include!(concat!(env!("OUT_DIR"), "/google/mod.rs"));
+mod proto {
+    include!(concat!(env!("OUT_DIR"), "/proto_defs/mod.rs"));
 }
 fn main() {
     println!("Hello, world!");

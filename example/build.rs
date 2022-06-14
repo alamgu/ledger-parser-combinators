@@ -15,7 +15,7 @@ fn main() -> std::io::Result<()> {
 
     proto_gen::generate::generate_rust_code(
         f,
-        Path::new("google")
+        Path::new("proto_defs")
     );
     Ok(())
 }

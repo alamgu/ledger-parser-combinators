@@ -2,8 +2,6 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::path::Path;
-use std::fs::OpenOptions;
-use std::io::prelude::*;
 use proto::descriptor::FileDescriptorSet;
 
 use crate::proto;
@@ -30,11 +28,15 @@ pub fn generate_rust_code(proto_file_descriptor_set: FileDescriptorSet, out_path
     fs::create_dir(&out_dir)
         .expect("Could not create new dir");
 
+    file_descriptor::add_to_mod(
+        &out_dir,
+        &[],
+br"#[allow(non_camel_case_types)]
+#[allow(dead_code)]"
+    );
+
     for file in proto_file_descriptor_set.file {
         file.gen_rust(&out_dir);
-        // TODO: I dont like making empty vectors for every file.
-        // I wanted to use slices of string slices. And defult to an empty slice.
-        // But I had trouble doing things with Option/map/and/unwrap/to_slice
     }
 }
 
