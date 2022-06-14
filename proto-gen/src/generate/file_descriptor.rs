@@ -152,6 +152,8 @@ impl proto::descriptor::OneofDescriptorProto {
     }
 }
 
+use proto::descriptor::field_descriptor_proto::Label;
+
 impl proto::descriptor::FieldDescriptorProto {
     fn generate_macro_code_for_field_descriptor(&self, reference_depth: usize) -> String {
         let name = self.name
@@ -161,9 +163,7 @@ impl proto::descriptor::FieldDescriptorProto {
             .as_ref()
             .expect("!!")
             .enum_value()
-            .expect("!!")
-            .macro_code()
-            .to_string();
+            .expect("!!");
         let t = self.type_
             .as_ref()
             .expect("!!")
@@ -173,28 +173,16 @@ impl proto::descriptor::FieldDescriptorProto {
         let number = self.number
             .as_ref()
             .expect("!!");
-        format!("{name}: {label}{t} = {number}")
-    }
-}
 
-use proto::descriptor::field_descriptor_proto::Label;
-
-impl proto::descriptor::field_descriptor_proto::Label {
-    fn macro_code_explicit(&self) -> &str {
-        match self{
-            Label::LABEL_OPTIONAL => "optional ",
-            Label::LABEL_REQUIRED => "required ",
-            Label::LABEL_REPEATED => "repeated ",
+        if label == Label::LABEL_REPEATED {
+            format!("{name}: repeated({t}) = {number}")
         }
-    }
-
-    fn macro_code(&self) -> &str {
-        match self{
-            proto::descriptor::field_descriptor_proto::Label::LABEL_REPEATED => "repeated ",
-            _ => ""
+        else {
+            format!("{name}: {t} = {number}")
         }
     }
 }
+
 use proto::descriptor::field_descriptor_proto::Type;
 
 impl proto::descriptor::field_descriptor_proto::Type {

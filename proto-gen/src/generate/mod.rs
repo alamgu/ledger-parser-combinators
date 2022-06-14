@@ -185,9 +185,9 @@ define_message! {
 define_message! {
     Type {
         name: string = 1,
-        fields: repeated super::super::google::protobuf::Field = 2,
-        oneofs: repeated string = 3,
-        options: repeated super::super::google::protobuf::Option = 4,
+        fields: repeated(super::super::google::protobuf::Field) = 2,
+        oneofs: repeated(string) = 3,
+        options: repeated(super::super::google::protobuf::Option) = 4,
         source_context: super::super::google::protobuf::SourceContext = 5,
         syntax: super::super::google::protobuf::Syntax = 6,
     }
@@ -202,7 +202,7 @@ define_message! {
         type_url: string = 6,
         oneof_index: int32 = 7,
         packed: bool = 8,
-        options: repeated super::super::google::protobuf::Option = 9,
+        options: repeated(super::super::google::protobuf::Option) = 9,
         json_name: string = 10,
         default_value: string = 11,
     }
@@ -210,8 +210,8 @@ define_message! {
 define_message! {
     Enum {
         name: string = 1,
-        enumvalue: repeated super::super::google::protobuf::EnumValue = 2,
-        options: repeated super::super::google::protobuf::Option = 3,
+        enumvalue: repeated(super::super::google::protobuf::EnumValue) = 2,
+        options: repeated(super::super::google::protobuf::Option) = 3,
         source_context: super::super::google::protobuf::SourceContext = 4,
         syntax: super::super::google::protobuf::Syntax = 5,
     }
@@ -220,7 +220,7 @@ define_message! {
     EnumValue {
         name: string = 1,
         number: int32 = 2,
-        options: repeated super::super::google::protobuf::Option = 3,
+        options: repeated(super::super::google::protobuf::Option) = 3,
     }
 }
 define_message! {
@@ -238,11 +238,11 @@ define_enum! {
 define_message! {
     Api {
         name: string = 1,
-        methods: repeated super::super::google::protobuf::Method = 2,
-        options: repeated super::super::google::protobuf::Option = 3,
+        methods: repeated(super::super::google::protobuf::Method) = 2,
+        options: repeated(super::super::google::protobuf::Option) = 3,
         version: string = 4,
         source_context: super::super::google::protobuf::SourceContext = 5,
-        mixins: repeated super::super::google::protobuf::Mixin = 6,
+        mixins: repeated(super::super::google::protobuf::Mixin) = 6,
         syntax: super::super::google::protobuf::Syntax = 7,
     }
 }
@@ -253,7 +253,7 @@ define_message! {
         request_streaming: bool = 3,
         response_type_url: string = 4,
         response_streaming: bool = 5,
-        options: repeated super::super::google::protobuf::Option = 6,
+        options: repeated(super::super::google::protobuf::Option) = 6,
         syntax: super::super::google::protobuf::Syntax = 7,
     }
 }
