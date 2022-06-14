@@ -204,7 +204,8 @@ impl proto::descriptor::field_descriptor_proto::Type {
             Type::TYPE_SFIXED64 => String::from("sfixed64"),
             Type::TYPE_SINT32 => String::from("sint32"),
             Type::TYPE_SINT64 => String::from("sint64"),
-            Type::TYPE_MESSAGE | Type::TYPE_ENUM => buff_type_ref_to_rust_ref(type_name.unwrap(), reference_depth),
+            Type::TYPE_MESSAGE => format!("message({})", buff_type_ref_to_rust_ref(type_name.unwrap(), reference_depth)),
+            Type::TYPE_ENUM  => format!("enum({})", buff_type_ref_to_rust_ref(type_name.unwrap(), reference_depth)),
         }
     }
 }
