@@ -31,8 +31,9 @@ pub fn generate_rust_code(proto_file_descriptor_set: FileDescriptorSet, out_path
     file_descriptor::add_to_mod(
         &out_dir,
         &[],
-br"#[allow(non_camel_case_types)]
-#[allow(dead_code)]"
+br#"#[allow(non_camel_case_types)]
+#[allow(dead_code)]
+"#
     );
 
     for file in proto_file_descriptor_set.file {
@@ -76,9 +77,13 @@ message SignDoc {
 
         super::generate_rust_code(fds, mod_dir);
 
-        assert_eq!(string_from_path(&mod_dir.join("mod.rs")), "mod cosmos;\n");
-        assert_eq!(string_from_path(&mod_dir.join("cosmos/mod.rs")), "mod tx;\n");
-        assert_eq!(string_from_path(&mod_dir.join("cosmos/tx/mod.rs")), "mod v1beta1;\n");
+        assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
+r#"#[allow(non_camel_case_types)]
+#[allow(dead_code)]
+pub mod cosmos;
+"#);
+        assert_eq!(string_from_path(&mod_dir.join("cosmos/mod.rs")), "pub mod tx;\n");
+        assert_eq!(string_from_path(&mod_dir.join("cosmos/tx/mod.rs")), "pub mod v1beta1;\n");
         assert_eq!(string_from_path(&mod_dir.join("cosmos/tx/v1beta1/mod.rs")), r#"define_message! {
     SignDoc {
         body_bytes: bytes = 1,
@@ -101,7 +106,10 @@ message Test { }
 
         super::generate_rust_code(fds, mod_dir);
 
-        assert_eq!(string_from_path(&mod_dir.join("mod.rs")), r#"define_message! {
+        assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
+r#"#[allow(non_camel_case_types)]
+#[allow(dead_code)]
+define_message! {
     Test {
     }
 }
@@ -123,9 +131,13 @@ message Test { }
 
         super::generate_rust_code(fds, mod_dir);
 
-        assert_eq!(string_from_path(&mod_dir.join("mod.rs")), "mod google;\n");
-        assert_eq!(string_from_path(&mod_dir.join("google/mod.rs")), "mod protobuf;\n");
-        assert_eq!(string_from_path(&mod_dir.join("google/protobuf/Field/mod.rs")),
+        assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
+r#"#[allow(non_camel_case_types)]
+#[allow(dead_code)]
+pub mod google;
+"#);
+        assert_eq!(string_from_path(&mod_dir.join("google/mod.rs")), "pub mod protobuf;\n");
+        assert_eq!(string_from_path(&mod_dir.join("google/protobuf/field/mod.rs")),
 r#"define_enum! {
     Kind {
         TYPE_UNKNOWN = 0,
@@ -180,11 +192,11 @@ define_message! {
         syntax: super::super::google::protobuf::Syntax = 6,
     }
 }
-mod Field;
+pub mod field;
 define_message! {
     Field {
-        kind: super::super::google::protobuf::Field::Kind = 1,
-        cardinality: super::super::google::protobuf::Field::Cardinality = 2,
+        kind: super::super::google::protobuf::field::Kind = 1,
+        cardinality: super::super::google::protobuf::field::Cardinality = 2,
         number: int32 = 3,
         name: string = 4,
         type_url: string = 6,
