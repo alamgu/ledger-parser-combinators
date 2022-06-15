@@ -61,7 +61,7 @@ impl proto::descriptor::DescriptorProto {
         }
 
         let mut code = String::new();
-        code.push_str(&format!("define_message! {{\n    {name} {{\n"));
+        code.push_str(&format!("ledger_parser_combinators::protobufs::async_parsers::define_message! {{\n    {name} {{\n"));
 
         let package_depth = package_path.len();
         // field
@@ -111,7 +111,7 @@ impl proto::descriptor::EnumDescriptorProto {
         // options
         //
         // options for enum type
-        code.push_str(&format!("define_enum! {{\n    {name} {{\n"));
+        code.push_str(&format!("ledger_parser_combinators::protobufs::async_parsers::define_enum! {{\n    {name} {{\n"));
 
         for value in &self.value {
             code.push_str(&format!("        {},\n",&value.to_rust_macro()));
