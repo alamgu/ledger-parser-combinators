@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package test.proto;
+
+import "google/protobuf/timestamp.proto";
+
+message Test {
+    uint32 foo = 1;
+    string bar = 2;
+    bytes biz = 3;
+}
+
+message Thing {
+  string name = 1;
+  message Stuff {
+    sint32 argg = 1;
+    message Blag {
+      bool is_blag = 1;
+    }
+  }
+}

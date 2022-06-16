@@ -9,8 +9,8 @@ fn main() -> std::io::Result<()> {
 
     let f = proto_gen::parse::parse_proto_files(
         true,
-        &[&goole_proto_include],
-        &[&goole_proto_include.join("google/protobuf/api.proto")]
+        &[&goole_proto_include, Path::new("proto")],
+        &[Path::new("proto/sample.proto")]
     )?;
 
     proto_gen::generate::generate_rust_code(
