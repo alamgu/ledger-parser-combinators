@@ -31,6 +31,14 @@ impl<A> Summable<A> for () {
     fn zero() -> Self { () }
 }
 
+impl<A:Summable<C>, B: Summable<D>, C, D> Summable<(C,D)> for (A, B) {
+    fn add_and_set(&mut self, other: &(C,D)) {
+        self.0.add_and_set(&other.0);
+        self.1.add_and_set(&other.1);
+    }
+    fn zero() -> Self { (Summable::<C>::zero(), Summable::<D>::zero()) }
+}
+
 #[derive(Debug)]
 pub struct Count(pub u64);
 
@@ -39,6 +47,16 @@ impl<A> Summable<A> for Count {
         self.0+=1;
     }
     fn zero() -> Self { Count(0) }
+}
+
+#[derive(Debug)]
+pub struct All(pub bool);
+
+impl Summable<bool> for All {
+    fn add_and_set(&mut self, other: &bool) {
+        self.0 &= *other;
+    }
+    fn zero() -> Self { All(true) }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1109,8 +1127,6 @@ mod tests {
 }
 
 
-
-pub struct Preaction<S>(pub fn() -> Option<()>, pub S);
 
 impl<A, S: JsonInterp<A>> JsonInterp<A> for Preaction<S> {
     type State = Option<<S as JsonInterp<A>>::State>;

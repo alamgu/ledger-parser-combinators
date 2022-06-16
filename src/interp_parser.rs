@@ -549,6 +549,27 @@ impl<A, B, S: DynInterpParser<A>, T: DynInterpParser<B, Parameter = S::Returning
     }
 
 #[derive(Clone)]
+pub struct Preaction<S>(pub fn() -> Option<()>, pub S);
+
+impl<A, S: InterpParser<A>> InterpParser<A> for Preaction<S> {
+    type State = Option<<S as InterpParser<A>>::State>;
+    type Returning = <S as InterpParser<A>>::Returning;
+
+    fn init(&self) -> Self::State { None }
+    #[inline(never)]
+    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        loop { break match state {
+            None => {
+                (self.0)().ok_or((Some(OOB::Reject), chunk))?;
+                set_from_thunk(state, || Some(<S as InterpParser<A>>::init(&self.1)));
+                continue;
+            }
+            Some(ref mut s) => <S as InterpParser<A>>::parse(&self.1, s, chunk, destination)
+        }}
+    }
+}
+
+#[derive(Clone)]
 pub struct ObserveBytes<X, F, S>(pub fn() -> X, pub F, pub S);
 
 impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<A> for ObserveBytes<X, F, S>
