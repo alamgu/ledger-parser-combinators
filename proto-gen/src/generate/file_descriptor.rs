@@ -3,18 +3,13 @@ use std::path::Path;
 
 impl proto::descriptor::FileDescriptorProto {
     pub fn gen_rust(&self, root_dir: &Path) {
-        assert!(
-            self.syntax.as_ref()
-                .expect("Missing syntax specifer")
-                .eq("proto3"),
-            "Syntax specifer is not \"proto3\""
-        );
+        assert_eq!(self.get_syntax(), "proto3", "Syntax specifer is not \"proto3\"");
 
         // package: Should be used for building the module namespace
-        let package_path = self.package
-            .as_ref()
-            .map(|ps| ps.split('.').collect::<Vec<_>>())
-            .unwrap_or(Vec::new());
+        let package_path = self.get_package()
+            .split('.')
+            .skip_while(|s| s.is_empty())
+            .collect::<Vec<_>>();
 
         // name: File name that the code was generated from.
         // dependency: Imported Dependencies
@@ -38,9 +33,7 @@ impl proto::descriptor::DescriptorProto {
         // name
         //
         // The name of the message
-        let name = self.name
-            .as_ref()
-            .expect("message name missing!");
+        let name = self.get_name();
         let rust_name = name.to_lowercase();
 
         let mut nested_path = Vec::from(package_path);
@@ -61,7 +54,7 @@ impl proto::descriptor::DescriptorProto {
         }
 
         let mut code = String::new();
-        code.push_str(&format!("ledger_parser_combinators::protobufs::async_parsers::define_message! {{\n    {name} {{\n"));
+        code.push_str(&format!("ledger_parser_combinators::protobufs::async_parsers::define_message! {{\n    {} {{\n", name));
 
         let package_depth = package_path.len();
         // field
@@ -104,14 +97,11 @@ impl proto::descriptor::EnumDescriptorProto {
         // name
         //
         // The name of the enum
-        let name = self.name
-            .as_ref()
-            .expect("!!");
-
+        let name = self.get_name();
         // options
         //
         // options for enum type
-        code.push_str(&format!("ledger_parser_combinators::protobufs::async_parsers::define_enum! {{\n    {name} {{\n"));
+        code.push_str(&format!("ledger_parser_combinators::protobufs::async_parsers::define_enum! {{\n    {} {{\n", name));
 
         for value in &self.value {
             code.push_str(&format!("        {},\n",&value.to_rust_macro()));
@@ -125,87 +115,70 @@ impl proto::descriptor::EnumDescriptorProto {
 
 impl proto::descriptor::EnumValueDescriptorProto {
     fn to_rust_macro(&self) -> String {
-        let name = self.name
-            .as_ref()
-            .expect("!!");
-        let number = self.number
-            .as_ref()
-            .expect("!!");
+        let name = self.get_name();
+        let number = self.get_number();
 
         // options
         //
         // options for enum value
-        format!("{name} = {number}")
+        format!("{} = {}", name, number)
     }
 }
 
 impl proto::descriptor::OneofDescriptorProto {
     fn to_rust_macro(&self) -> String {
-        let name = self.name
-            .as_ref()
-            .expect("!!");
+        let name = self.get_name();
         let mut code = String::new();
-        code.push_str(&format!("oneof {name} {{"));
+        code.push_str(&format!("oneof {} {{", name));
 
         code.push('}');
         code
     }
 }
 
-use proto::descriptor::field_descriptor_proto::Label;
+use proto::descriptor::FieldDescriptorProto_Label;
 
 impl proto::descriptor::FieldDescriptorProto {
     fn generate_macro_code_for_field_descriptor(&self, reference_depth: usize) -> String {
-        let name = self.name
-            .as_ref()
-            .expect("!!");
-        let label = self.label
-            .as_ref()
-            .expect("!!")
-            .enum_value()
-            .expect("!!");
-        let t = self.type_
-            .as_ref()
-            .expect("!!")
-            .unwrap()
-            .to_string(self.type_name.as_deref(), reference_depth);
+        let name = self.get_name();
+        let label = self.get_label();
+        let t = self.get_field_type()
+            .to_string(self.get_type_name(), reference_depth);
 
-        let number = self.number
-            .as_ref()
-            .expect("!!");
+        let number = self.get_number();
 
-        if label == Label::LABEL_REPEATED {
-            format!("{name}: repeated({t}) = {number}")
+        if label == FieldDescriptorProto_Label::LABEL_REPEATED {
+            format!("{}: repeated({}) = {}", name, t, number)
         }
         else {
-            format!("{name}: {t} = {number}")
+            format!("{}: {} = {}", name, t, number)
         }
     }
 }
 
-use proto::descriptor::field_descriptor_proto::Type;
+use proto::descriptor::FieldDescriptorProto_Type;
 
-impl proto::descriptor::field_descriptor_proto::Type {
-    fn to_string(&self, type_name: Option<&str>, reference_depth: usize) -> String {
+impl proto::descriptor::FieldDescriptorProto_Type {
+    fn to_string(&self, type_name: &str, reference_depth: usize) -> String {
         match self{
-            Type::TYPE_DOUBLE => String::from("double"),
-            Type::TYPE_FLOAT => String::from("float"),
-            Type::TYPE_INT64 => String::from("int64"),
-            Type::TYPE_UINT64 => String::from("uint64"),
-            Type::TYPE_INT32 => String::from("int32"),
-            Type::TYPE_FIXED64 => String::from("fixed64"),
-            Type::TYPE_FIXED32 => String::from("fixed32"),
-            Type::TYPE_BOOL => String::from("bool"),
-            Type::TYPE_STRING => String::from("string"),
-            Type::TYPE_GROUP => String::from("group"),
-            Type::TYPE_BYTES => String::from("bytes"),
-            Type::TYPE_UINT32 => String::from("uint32"),
-            Type::TYPE_SFIXED32 => String::from("sfixed32"),
-            Type::TYPE_SFIXED64 => String::from("sfixed64"),
-            Type::TYPE_SINT32 => String::from("sint32"),
-            Type::TYPE_SINT64 => String::from("sint64"),
-            Type::TYPE_MESSAGE => format!("message({})", buff_type_ref_to_rust_ref(type_name.unwrap(), reference_depth)),
-            Type::TYPE_ENUM  => format!("enum({})", buff_type_ref_to_rust_ref(type_name.unwrap(), reference_depth)),
+            FieldDescriptorProto_Type::TYPE_DOUBLE => String::from("double"),
+            FieldDescriptorProto_Type::TYPE_FLOAT => String::from("float"),
+            FieldDescriptorProto_Type::TYPE_INT64 => String::from("int64"),
+            FieldDescriptorProto_Type::TYPE_UINT64 => String::from("uint64"),
+            FieldDescriptorProto_Type::TYPE_INT32 => String::from("int32"),
+            FieldDescriptorProto_Type::TYPE_FIXED64 => String::from("fixed64"),
+            FieldDescriptorProto_Type::TYPE_FIXED32 => String::from("fixed32"),
+            FieldDescriptorProto_Type::TYPE_BOOL => String::from("bool"),
+            FieldDescriptorProto_Type::TYPE_STRING => String::from("string"),
+            FieldDescriptorProto_Type::TYPE_GROUP => String::from("group"),
+            FieldDescriptorProto_Type::TYPE_BYTES => String::from("bytes"),
+            FieldDescriptorProto_Type::TYPE_UINT32 => String::from("uint32"),
+            FieldDescriptorProto_Type::TYPE_SFIXED32 => String::from("sfixed32"),
+            FieldDescriptorProto_Type::TYPE_SFIXED64 => String::from("sfixed64"),
+            FieldDescriptorProto_Type::TYPE_SINT32 => String::from("sint32"),
+            FieldDescriptorProto_Type::TYPE_SINT64 => String::from("sint64"),
+            FieldDescriptorProto_Type::TYPE_MESSAGE => format!("message({})", buff_type_ref_to_rust_ref(type_name, reference_depth)),
+            FieldDescriptorProto_Type::TYPE_ENUM  => format!("enum({})", buff_type_ref_to_rust_ref(type_name, reference_depth)),
         }
     }
 }
@@ -233,7 +206,7 @@ fn buff_type_ref_to_rust_ref(buff_type_ref: &str, reference_depth: usize) -> Str
                 .take(reference_depth)
                 .collect::<Vec<_>>()
                 .join("::");
-            return format!("{back_ref}::{}", rest.join("::"));
+            return format!("{}::{}", back_ref, rest.join("::"));
         }
     }
 
@@ -266,7 +239,7 @@ pub fn add_to_mod(root: &Path, mod_path: &[&str], code: &[u8]){
             // Include the module
             op.open(root.join("mod.rs"))
                 .expect("Could not open module file")
-                .write_all(&format!("pub mod {new_mod};\n").as_bytes())
+                .write_all(&format!("pub mod {};\n", new_mod).as_bytes())
                 .expect("Could not write in module file");
         }
 

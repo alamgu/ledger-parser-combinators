@@ -118,6 +118,73 @@ ledger_parser_combinators::protobufs::async_parsers::define_message! {
     }
 
     #[test]
+    fn mod_less_sub_messag() {
+        let fds = parse_from_bytes(
+br#"syntax = "proto3";
+message Test {
+    Foo test_thing = 1;
+    Foo.Bar test_other = 2;
+    message Foo {
+        Test foo_thing = 1;
+        Bar foo_other = 2;
+        message Bar {
+            Test thing = 1;
+            Foo other = 2;
+        }
+    }
+}
+
+message Bizz {
+    Test thing = 1;
+    Test.Foo thing2 = 2;
+    Test.Foo.Bar thing3 = 3;
+}
+"#)
+    .unwrap();
+
+        let mod_dir = Path::new("");
+
+        super::generate_rust_code(fds, mod_dir);
+
+        assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
+r#"#[allow(non_camel_case_types)]
+#[allow(dead_code)]
+pub mod test;
+ledger_parser_combinators::protobufs::async_parsers::define_message! {
+    Test {
+        test_thing: message(test::Foo) = 1,
+        test_other: message(test::foo::Bar) = 2,
+    }
+}
+ledger_parser_combinators::protobufs::async_parsers::define_message! {
+    Bizz {
+        thing: message(Test) = 1,
+        thing2: message(test::Foo) = 2,
+        thing3: message(test::foo::Bar) = 3,
+    }
+}
+"#);
+        assert_eq!(string_from_path(&mod_dir.join("test/mod.rs")),
+r#"pub mod foo;
+ledger_parser_combinators::protobufs::async_parsers::define_message! {
+    Foo {
+        foo_thing: message(super::Test) = 1,
+        foo_other: message(super::test::foo::Bar) = 2,
+    }
+}
+"#);
+
+        assert_eq!(string_from_path(&mod_dir.join("test/foo/mod.rs")),
+r#"ledger_parser_combinators::protobufs::async_parsers::define_message! {
+    Bar {
+        thing: message(super::super::Test) = 1,
+        other: message(super::super::test::Foo) = 2,
+    }
+}
+"#);
+    }
+
+    #[test]
     fn google_protos() {
         let google_proto_include = PathBuf::from(env::var("PROTO_INCLUDE")
             .unwrap());
