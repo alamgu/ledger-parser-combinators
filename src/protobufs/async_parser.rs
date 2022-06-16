@@ -9,7 +9,7 @@ pub use num_traits::FromPrimitive;
 
 trait IsLengthDelimited { }
 
-fn parse_varint<'a: 'c, 'c, T, BS: Readable>(input: &'a mut BS) -> impl Future<Output = T> + 'c where
+pub fn parse_varint<'a: 'c, 'c, T, BS: Readable>(input: &'a mut BS) -> impl Future<Output = T> + 'c where
     T: Default + core::ops::Shl<Output = T> + core::ops::AddAssign + core::convert::From<u8>
 {
     async move {
@@ -103,7 +103,7 @@ impl<BS: Readable> AsyncParser<Fixed64, BS> for DefaultInterp {
     type State<'c> = impl Future<Output = Self::Output>;
 }
 
-trait LengthDelimitedParser<Schema, BS: Readable> : HasOutput<Schema>{
+pub trait LengthDelimitedParser<Schema, BS: Readable> : HasOutput<Schema>{
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c>;
     type State<'c>: Future<Output = Self::Output>;
 }
@@ -171,7 +171,7 @@ impl<const FIELD_NUMBER: u32, Schema: ProtobufWireFormat, Value: HasOutput<Schem
 }
 
 #[derive(Clone)]
-struct TrackLength<BS: Readable>(BS, usize);
+pub struct TrackLength<BS: Readable>(pub BS, pub usize);
 
 impl<BS: 'static + Readable> Readable for TrackLength<BS> {
     type OutFut<'a, const N: usize> = impl Future<Output = [u8; N]>;
