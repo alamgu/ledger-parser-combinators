@@ -78,14 +78,34 @@ message SignDoc {
         super::generate_rust_code(fds, mod_dir);
 
         assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
-r#"#[allow(non_camel_case_types)]
+r#"#[allow(unused_imports)]
+use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{schema::*, async_parser::*}};
+#[allow(unused_imports)]
+use core::future::Future;
+#[allow(non_camel_case_types)]
 #[allow(dead_code)]
 pub mod cosmos;
 "#);
-        assert_eq!(string_from_path(&mod_dir.join("cosmos/mod.rs")), "pub mod tx;\n");
-        assert_eq!(string_from_path(&mod_dir.join("cosmos/tx/mod.rs")), "pub mod v1beta1;\n");
+        assert_eq!(string_from_path(&mod_dir.join("cosmos/mod.rs")),
+r#"#[allow(unused_imports)]
+use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{schema::*, async_parser::*}};
+#[allow(unused_imports)]
+use core::future::Future;
+pub mod tx;
+"#);
+        assert_eq!(string_from_path(&mod_dir.join("cosmos/tx/mod.rs")),
+r#"#[allow(unused_imports)]
+use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{schema::*, async_parser::*}};
+#[allow(unused_imports)]
+use core::future::Future;
+pub mod v1beta1;
+"#);
         assert_eq!(string_from_path(&mod_dir.join("cosmos/tx/v1beta1/mod.rs")),
-r#"define_message! {
+r#"#[allow(unused_imports)]
+use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{schema::*, async_parser::*}};
+#[allow(unused_imports)]
+use core::future::Future;
+define_message! {
     SignDoc {
         body_bytes: bytes = 1,
         auth_info_bytes: bytes = 2,
@@ -108,10 +128,15 @@ message Test { }
         super::generate_rust_code(fds, mod_dir);
 
         assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
-r#"#[allow(non_camel_case_types)]
+r#"#[allow(unused_imports)]
+use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{schema::*, async_parser::*}};
+#[allow(unused_imports)]
+use core::future::Future;
+#[allow(non_camel_case_types)]
 #[allow(dead_code)]
 define_message! {
     Test {
+
     }
 }
 "#);
@@ -147,7 +172,11 @@ message Bizz {
         super::generate_rust_code(fds, mod_dir);
 
         assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
-r#"#[allow(non_camel_case_types)]
+r#"#[allow(unused_imports)]
+use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{schema::*, async_parser::*}};
+#[allow(unused_imports)]
+use core::future::Future;
+#[allow(non_camel_case_types)]
 #[allow(dead_code)]
 pub mod test;
 define_message! {
@@ -165,7 +194,11 @@ define_message! {
 }
 "#);
         assert_eq!(string_from_path(&mod_dir.join("test/mod.rs")),
-r#"pub mod foo;
+r#"#[allow(unused_imports)]
+use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{schema::*, async_parser::*}};
+#[allow(unused_imports)]
+use core::future::Future;
+pub mod foo;
 define_message! {
     Foo {
         foo_thing: message(super::Test) = 1,
@@ -175,7 +208,11 @@ define_message! {
 "#);
 
         assert_eq!(string_from_path(&mod_dir.join("test/foo/mod.rs")),
-r#"define_message! {
+r#"#[allow(unused_imports)]
+use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{schema::*, async_parser::*}};
+#[allow(unused_imports)]
+use core::future::Future;
+define_message! {
     Bar {
         thing: message(super::super::Test) = 1,
         other: message(super::super::test::Foo) = 2,
@@ -200,13 +237,27 @@ r#"define_message! {
         super::generate_rust_code(fds, mod_dir);
 
         assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
-r#"#[allow(non_camel_case_types)]
+r#"#[allow(unused_imports)]
+use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{schema::*, async_parser::*}};
+#[allow(unused_imports)]
+use core::future::Future;
+#[allow(non_camel_case_types)]
 #[allow(dead_code)]
 pub mod google;
 "#);
-        assert_eq!(string_from_path(&mod_dir.join("google/mod.rs")), "pub mod protobuf;\n");
+        assert_eq!(string_from_path(&mod_dir.join("google/mod.rs")),
+r#"#[allow(unused_imports)]
+use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{schema::*, async_parser::*}};
+#[allow(unused_imports)]
+use core::future::Future;
+pub mod protobuf;
+"#);
         assert_eq!(string_from_path(&mod_dir.join("google/protobuf/field/mod.rs")),
-r#"define_enum! {
+r#"#[allow(unused_imports)]
+use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{schema::*, async_parser::*}};
+#[allow(unused_imports)]
+use core::future::Future;
+define_enum! {
     Kind {
         TYPE_UNKNOWN = 0,
         TYPE_DOUBLE = 1,
@@ -239,7 +290,11 @@ define_enum! {
 }
 "#);
         assert_eq!(string_from_path(&mod_dir.join("google/protobuf/mod.rs")),
-r#"define_message! {
+r#"#[allow(unused_imports)]
+use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{schema::*, async_parser::*}};
+#[allow(unused_imports)]
+use core::future::Future;
+define_message! {
     SourceContext {
         file_name: string = 1,
     }
