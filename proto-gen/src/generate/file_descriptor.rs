@@ -181,40 +181,32 @@ impl proto::descriptor::FieldDescriptorProto_Type {
             FieldDescriptorProto_Type::TYPE_SFIXED64 => String::from("sfixed64"),
             FieldDescriptorProto_Type::TYPE_SINT32 => String::from("sint32"),
             FieldDescriptorProto_Type::TYPE_SINT64 => String::from("sint64"),
-            FieldDescriptorProto_Type::TYPE_MESSAGE => format!("message({})", buff_type_ref_to_rust_ref(type_name, reference_depth)),
-            FieldDescriptorProto_Type::TYPE_ENUM  => format!("enum({})", buff_type_ref_to_rust_ref(type_name, reference_depth)),
+            FieldDescriptorProto_Type::TYPE_MESSAGE => format!("message({})", buff_ref_to_rust_ref(type_name, reference_depth)),
+            FieldDescriptorProto_Type::TYPE_ENUM  => format!("enum({})", buff_ref_to_rust_ref(type_name, reference_depth)),
         }
     }
 }
 
 use std::iter;
 
-fn buff_type_ref_to_rust_ref(buff_type_ref: &str, reference_depth: usize) -> String {
-    let parts = buff_type_ref
+fn buff_ref_to_rust_ref(buff_ref: &str, reference_depth: usize) -> String {
+    let parts = buff_ref
         .split('.')
-        .collect::<Vec<&str>>();
+        .skip(1) // Assuming we have ".foo" we get [ "", "foo" ]
+        .map(String::from)
+        .collect::<Vec<_>>();
 
-    let (last, rest) = parts
+    let (end, rest) = parts
         .split_last()
-        .expect("");
+        .unwrap();
 
-    let normalized = rest
-        .iter()
-        .map(|s| s.to_lowercase())
-        .chain(iter::once(last.to_owned().into()))
-        .collect::<Vec<String>>();
-
-    if let Some((first, rest)) = normalized.split_first() {
-        if first.is_empty() {
-            let back_ref = iter::repeat("super")
-                .take(reference_depth)
-                .collect::<Vec<_>>()
-                .join("::");
-            return format!("{}::{}", back_ref, rest.join("::"));
-        }
-    }
-
-    normalized.join("::")
+    return iter::repeat("super")
+        .take(reference_depth)
+        .map(String::from)
+        .chain(rest.iter().map(|s| s.to_lowercase()))
+        .chain(iter::once(end.to_owned()))
+        .collect::<Vec<_>>()
+        .join("::");
 }
 
 use std::fs::OpenOptions;
