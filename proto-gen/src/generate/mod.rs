@@ -85,7 +85,7 @@ pub mod cosmos;
         assert_eq!(string_from_path(&mod_dir.join("cosmos/mod.rs")), "pub mod tx;\n");
         assert_eq!(string_from_path(&mod_dir.join("cosmos/tx/mod.rs")), "pub mod v1beta1;\n");
         assert_eq!(string_from_path(&mod_dir.join("cosmos/tx/v1beta1/mod.rs")),
-r#"ledger_parser_combinators::protobufs::async_parsers::define_message! {
+r#"define_message! {
     SignDoc {
         body_bytes: bytes = 1,
         auth_info_bytes: bytes = 2,
@@ -110,7 +110,7 @@ message Test { }
         assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
 r#"#[allow(non_camel_case_types)]
 #[allow(dead_code)]
-ledger_parser_combinators::protobufs::async_parsers::define_message! {
+define_message! {
     Test {
     }
 }
@@ -150,13 +150,13 @@ message Bizz {
 r#"#[allow(non_camel_case_types)]
 #[allow(dead_code)]
 pub mod test;
-ledger_parser_combinators::protobufs::async_parsers::define_message! {
+define_message! {
     Test {
         test_thing: message(test::Foo) = 1,
         test_other: message(test::foo::Bar) = 2,
     }
 }
-ledger_parser_combinators::protobufs::async_parsers::define_message! {
+define_message! {
     Bizz {
         thing: message(Test) = 1,
         thing2: message(test::Foo) = 2,
@@ -166,7 +166,7 @@ ledger_parser_combinators::protobufs::async_parsers::define_message! {
 "#);
         assert_eq!(string_from_path(&mod_dir.join("test/mod.rs")),
 r#"pub mod foo;
-ledger_parser_combinators::protobufs::async_parsers::define_message! {
+define_message! {
     Foo {
         foo_thing: message(super::Test) = 1,
         foo_other: message(super::test::foo::Bar) = 2,
@@ -175,7 +175,7 @@ ledger_parser_combinators::protobufs::async_parsers::define_message! {
 "#);
 
         assert_eq!(string_from_path(&mod_dir.join("test/foo/mod.rs")),
-r#"ledger_parser_combinators::protobufs::async_parsers::define_message! {
+r#"define_message! {
     Bar {
         thing: message(super::super::Test) = 1,
         other: message(super::super::test::Foo) = 2,
@@ -206,7 +206,7 @@ pub mod google;
 "#);
         assert_eq!(string_from_path(&mod_dir.join("google/mod.rs")), "pub mod protobuf;\n");
         assert_eq!(string_from_path(&mod_dir.join("google/protobuf/field/mod.rs")),
-r#"ledger_parser_combinators::protobufs::async_parsers::define_enum! {
+r#"define_enum! {
     Kind {
         TYPE_UNKNOWN = 0,
         TYPE_DOUBLE = 1,
@@ -229,7 +229,7 @@ r#"ledger_parser_combinators::protobufs::async_parsers::define_enum! {
         TYPE_SINT64 = 18,
     }
 }
-ledger_parser_combinators::protobufs::async_parsers::define_enum! {
+define_enum! {
     Cardinality {
         CARDINALITY_UNKNOWN = 0,
         CARDINALITY_OPTIONAL = 1,
@@ -239,18 +239,18 @@ ledger_parser_combinators::protobufs::async_parsers::define_enum! {
 }
 "#);
         assert_eq!(string_from_path(&mod_dir.join("google/protobuf/mod.rs")),
-r#"ledger_parser_combinators::protobufs::async_parsers::define_message! {
+r#"define_message! {
     SourceContext {
         file_name: string = 1,
     }
 }
-ledger_parser_combinators::protobufs::async_parsers::define_message! {
+define_message! {
     Any {
         type_url: string = 1,
         value: bytes = 2,
     }
 }
-ledger_parser_combinators::protobufs::async_parsers::define_message! {
+define_message! {
     Type {
         name: string = 1,
         fields: repeated(message(super::super::google::protobuf::Field)) = 2,
@@ -261,7 +261,7 @@ ledger_parser_combinators::protobufs::async_parsers::define_message! {
     }
 }
 pub mod field;
-ledger_parser_combinators::protobufs::async_parsers::define_message! {
+define_message! {
     Field {
         kind: enum(super::super::google::protobuf::field::Kind) = 1,
         cardinality: enum(super::super::google::protobuf::field::Cardinality) = 2,
@@ -275,7 +275,7 @@ ledger_parser_combinators::protobufs::async_parsers::define_message! {
         default_value: string = 11,
     }
 }
-ledger_parser_combinators::protobufs::async_parsers::define_message! {
+define_message! {
     Enum {
         name: string = 1,
         enumvalue: repeated(message(super::super::google::protobuf::EnumValue)) = 2,
@@ -284,26 +284,26 @@ ledger_parser_combinators::protobufs::async_parsers::define_message! {
         syntax: enum(super::super::google::protobuf::Syntax) = 5,
     }
 }
-ledger_parser_combinators::protobufs::async_parsers::define_message! {
+define_message! {
     EnumValue {
         name: string = 1,
         number: int32 = 2,
         options: repeated(message(super::super::google::protobuf::Option)) = 3,
     }
 }
-ledger_parser_combinators::protobufs::async_parsers::define_message! {
+define_message! {
     Option {
         name: string = 1,
         value: message(super::super::google::protobuf::Any) = 2,
     }
 }
-ledger_parser_combinators::protobufs::async_parsers::define_enum! {
+define_enum! {
     Syntax {
         SYNTAX_PROTO2 = 0,
         SYNTAX_PROTO3 = 1,
     }
 }
-ledger_parser_combinators::protobufs::async_parsers::define_message! {
+define_message! {
     Api {
         name: string = 1,
         methods: repeated(message(super::super::google::protobuf::Method)) = 2,
@@ -314,7 +314,7 @@ ledger_parser_combinators::protobufs::async_parsers::define_message! {
         syntax: enum(super::super::google::protobuf::Syntax) = 7,
     }
 }
-ledger_parser_combinators::protobufs::async_parsers::define_message! {
+define_message! {
     Method {
         name: string = 1,
         request_type_url: string = 2,
@@ -325,7 +325,7 @@ ledger_parser_combinators::protobufs::async_parsers::define_message! {
         syntax: enum(super::super::google::protobuf::Syntax) = 7,
     }
 }
-ledger_parser_combinators::protobufs::async_parsers::define_message! {
+define_message! {
     Mixin {
         name: string = 1,
         root: string = 2,
