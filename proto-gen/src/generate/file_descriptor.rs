@@ -74,15 +74,6 @@ impl proto::descriptor::DescriptorProto {
 
         // extension_range
         // oneof_decl
-        //
-        // Not sure
-        // TODO: Understand this!
-        if !self.oneof_decl.is_empty() {
-            code.push_str("// Oneof_decl\n");
-            for oneof_decl in &self.oneof_decl {
-                code.push_str(&oneof_decl.to_rust_macro());
-            }
-        }
         // options
         // reserved_range
         // reserved_name
@@ -126,17 +117,6 @@ impl proto::descriptor::EnumValueDescriptorProto {
         //
         // options for enum value
         format!("{} = {}", name, number)
-    }
-}
-
-impl proto::descriptor::OneofDescriptorProto {
-    fn to_rust_macro(&self) -> String {
-        let name = self.get_name();
-        let mut code = String::new();
-        code.push_str(&format!("oneof {} {{", name));
-
-        code.push('}');
-        code
     }
 }
 
