@@ -2,10 +2,11 @@
 #![feature(generic_associated_types)]
 #![feature(min_type_alias_impl_trait)]
 
-use ledger_parser_combinators::define_message;
+use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{schema::*, async_parser::*}};
+use std::future::Future;
 
 mod proto {
-    include!(concat!(env!("OUT_DIR"),"/proto_defs/mod.rs"));
+    include!(concat!(env!("OUT_DIR"), "/proto_defs/mod.rs"));
 }
 
 fn main() {
