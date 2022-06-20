@@ -110,7 +110,7 @@ define_message! {
         body_bytes: bytes = 1,
         auth_info_bytes: bytes = 2,
         chain_id: string = 3,
-        account_number: uint64 = 4,
+        account_number: uint64 = 4
     }
 }
 "#);
@@ -182,14 +182,14 @@ pub mod test;
 define_message! {
     Test {
         test_thing: message(test::Foo) = 1,
-        test_other: message(test::foo::Bar) = 2,
+        test_other: message(test::foo::Bar) = 2
     }
 }
 define_message! {
     Bizz {
         thing: message(Test) = 1,
         thing2: message(test::Foo) = 2,
-        thing3: message(test::foo::Bar) = 3,
+        thing3: message(test::foo::Bar) = 3
     }
 }
 "#);
@@ -202,7 +202,7 @@ pub mod foo;
 define_message! {
     Foo {
         foo_thing: message(super::Test) = 1,
-        foo_other: message(super::test::foo::Bar) = 2,
+        foo_other: message(super::test::foo::Bar) = 2
     }
 }
 "#);
@@ -215,7 +215,7 @@ use core::future::Future;
 define_message! {
     Bar {
         thing: message(super::super::Test) = 1,
-        other: message(super::super::test::Foo) = 2,
+        other: message(super::super::test::Foo) = 2
     }
 }
 "#);
@@ -296,13 +296,13 @@ use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{sch
 use core::future::Future;
 define_message! {
     SourceContext {
-        file_name: string = 1,
+        file_name: string = 1
     }
 }
 define_message! {
     Any {
         type_url: string = 1,
-        value: bytes = 2,
+        value: bytes = 2
     }
 }
 define_message! {
@@ -312,7 +312,7 @@ define_message! {
         oneofs: repeated(string) = 3,
         options: repeated(message(super::super::google::protobuf::Option)) = 4,
         source_context: message(super::super::google::protobuf::SourceContext) = 5,
-        syntax: enum(super::super::google::protobuf::Syntax) = 6,
+        syntax: enum(super::super::google::protobuf::Syntax) = 6
     }
 }
 pub mod field;
@@ -327,7 +327,7 @@ define_message! {
         packed: bool = 8,
         options: repeated(message(super::super::google::protobuf::Option)) = 9,
         json_name: string = 10,
-        default_value: string = 11,
+        default_value: string = 11
     }
 }
 define_message! {
@@ -336,20 +336,20 @@ define_message! {
         enumvalue: repeated(message(super::super::google::protobuf::EnumValue)) = 2,
         options: repeated(message(super::super::google::protobuf::Option)) = 3,
         source_context: message(super::super::google::protobuf::SourceContext) = 4,
-        syntax: enum(super::super::google::protobuf::Syntax) = 5,
+        syntax: enum(super::super::google::protobuf::Syntax) = 5
     }
 }
 define_message! {
     EnumValue {
         name: string = 1,
         number: int32 = 2,
-        options: repeated(message(super::super::google::protobuf::Option)) = 3,
+        options: repeated(message(super::super::google::protobuf::Option)) = 3
     }
 }
 define_message! {
     Option {
         name: string = 1,
-        value: message(super::super::google::protobuf::Any) = 2,
+        value: message(super::super::google::protobuf::Any) = 2
     }
 }
 define_enum! {
@@ -366,7 +366,7 @@ define_message! {
         version: string = 4,
         source_context: message(super::super::google::protobuf::SourceContext) = 5,
         mixins: repeated(message(super::super::google::protobuf::Mixin)) = 6,
-        syntax: enum(super::super::google::protobuf::Syntax) = 7,
+        syntax: enum(super::super::google::protobuf::Syntax) = 7
     }
 }
 define_message! {
@@ -377,13 +377,13 @@ define_message! {
         response_type_url: string = 4,
         response_streaming: bool = 5,
         options: repeated(message(super::super::google::protobuf::Option)) = 6,
-        syntax: enum(super::super::google::protobuf::Syntax) = 7,
+        syntax: enum(super::super::google::protobuf::Syntax) = 7
     }
 }
 define_message! {
     Mixin {
         name: string = 1,
-        root: string = 2,
+        root: string = 2
     }
 }
 "#);

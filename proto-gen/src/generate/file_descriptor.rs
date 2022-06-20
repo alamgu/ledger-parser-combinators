@@ -60,9 +60,13 @@ impl proto::descriptor::DescriptorProto {
         // field
         //
         // Fields in the message
-        for f in &self.field {
-            code.push_str(&format!("        {},\n", f.generate_macro_code_for_field_descriptor(package_depth)));
-        }
+        let a = self.field.iter()
+            .map(|f| format!("        {}", f.generate_macro_code_for_field_descriptor(package_depth)))
+            .collect::<Vec<_>>()
+            .join(",\n");
+
+        code.push_str(&a);
+        code.push('\n');
 
         // extension
         //
