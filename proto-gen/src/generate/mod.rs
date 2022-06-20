@@ -167,7 +167,7 @@ message Bizz {
 "#)
     .unwrap();
 
-        let mod_dir = Path::new("");
+        let mod_dir = Path::new("sub_message");
 
         super::generate_rust_code(fds, mod_dir);
 
