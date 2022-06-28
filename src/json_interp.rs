@@ -665,6 +665,40 @@ impl<T> JsonInterp<JsonArray<T>> for DropInterp where DropInterp: JsonInterp<T> 
     }
 }
 
+impl<A, B> ParserCommon<Alt<A, B>> for DropInterp
+  where DropInterp: ParserCommon<A> + ParserCommon<B> {
+    type State = (
+        Option<<DropInterp as ParserCommon<A>>::State>,
+        Option<<DropInterp as ParserCommon<A>>::Returning>,
+        Option<<DropInterp as ParserCommon<B>>::State>,
+        Option<<DropInterp as ParserCommon<B>>::Returning>);
+    type Returning = ();
+    fn init(&self) -> Self::State {
+        ( Some(<DropInterp as ParserCommon<A>>::init(&DropInterp))
+        , None
+        , Some(<DropInterp as ParserCommon<B>>::init(&DropInterp))
+        , None)
+    }
+}
+impl<A, B> JsonInterp<Alt<A, B>> for DropInterp
+  where DropInterp: JsonInterp<A> + JsonInterp<B> {
+    #[inline(never)]
+    fn parse<'a>(&self, (ref mut state1, ref mut rv1, ref mut state2, ref mut rv2): &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        match (state1.as_mut().map(|s| <DropInterp as JsonInterp<A>>::parse(&DropInterp, s, token, rv1)).transpose()
+              , state2.as_mut().map(|s| <DropInterp as JsonInterp<B>>::parse(&DropInterp, s, token, rv2)).transpose()) {
+            (Err(None), Err(None)) => Err(None),
+            (Err(None), Ok(None)) => Err(None),
+            (Ok(None), Err(None)) => Err(None),
+            // Left-preference. This will complicate things a bit if we ever try to do host-side hinting.
+            (Ok(Some(())), _) => { set_from_thunk(destination, || Some(())); Ok(()) }
+            (Err(Some(OOB::Reject)), Ok(Some(()))) | (Ok(None), Ok(Some(()))) => { set_from_thunk(destination, || Some(())); Ok(()) }
+            (Err(Some(OOB::Reject)), Err(None)) => { set_from_thunk(state1, || None); Err(None) }
+            (Err(None), Err(Some(OOB::Reject))) => { set_from_thunk(state2, || None); Err(None) }
+            _ => Err(Some(OOB::Reject)),
+        }
+    }
+}
+
 /* Important: DROPS it's results */
 impl<T, S: ParserCommon<T>> ParserCommon<JsonArray<T>> for SubInterp<S> {
     type State = JsonArrayDropState<<S as ParserCommon<T>>::State, <S as ParserCommon<T>>::Returning>;
