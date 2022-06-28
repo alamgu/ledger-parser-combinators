@@ -10,3 +10,4 @@ ledger-parser-combinators = { path = "../parser-combinators/" }
 
 [build-dependencies]
 proto-gen = { path = "../proto-gen" }
+tempfile = "3.3"

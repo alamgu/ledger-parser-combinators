@@ -1,14 +1,23 @@
 use std::env;
 use std::fs;
+use std::io::BufReader;
 use std::path::PathBuf;
 use std::path::Path;
+use std::fs::File;
 use proto::descriptor::FileDescriptorSet;
 
 use crate::proto;
 
 mod file_descriptor;
 
-pub fn generate_rust_code(proto_file_descriptor_set: FileDescriptorSet, out_path_in_out_dir: &Path) {
+pub fn generate_rust_code(file_descriptor_set_bin: &Path, out_path_in_out_dir: &Path) {
+    let f = File::open(file_descriptor_set_bin)
+        .unwrap();
+    let mut reader = BufReader::new(f);
+
+    let proto_file_descriptor_set: FileDescriptorSet = protobuf::Message::parse_from_reader(&mut reader)
+        .unwrap();
+
     if out_path_in_out_dir.is_absolute() {
         panic!("Must provide relative path from $OUT_DIR");
     }
@@ -47,10 +56,16 @@ pub mod tests {
     use std::path::PathBuf;
     use std::fs;
     use std::path::Path;
+    use std::process;
 
     #[test]
     fn cosmos_sign_doc() {
-        let fds = parse_from_bytes(br#"syntax = "proto3";
+        let temp_dir = tempfile::Builder::new()
+            .prefix("proto-test")
+            .tempdir()
+            .unwrap();
+        let fds_file = temp_dir.path().join("fds.bin");
+        parse_proto_to_file(&fds_file, br#"syntax = "proto3";
 package cosmos.tx.v1beta1;
 // SignDoc is the type used for generating sign bytes for SIGN_MODE_DIRECT.
 message SignDoc {
@@ -70,12 +85,11 @@ message SignDoc {
   // account_number is the account number of the account in state
   uint64 account_number = 4;
 }
-"#)
-            .expect("Error parsing proto file");
+"#);
 
         let mod_dir = Path::new("cosmos_test");
 
-        super::generate_rust_code(fds, mod_dir);
+        super::generate_rust_code(&fds_file, mod_dir);
 
         assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
 r#"#[allow(unused_imports)]
@@ -118,14 +132,18 @@ define_message! {
 
     #[test]
     fn empty_message() {
-        let fds = parse_from_bytes(br#"syntax = "proto3";
+       let temp_dir = tempfile::Builder::new()
+            .prefix("proto-test")
+            .tempdir()
+            .unwrap();
+        let fds_file = temp_dir.path().join("fds.bin");
+        parse_proto_to_file(&fds_file, br#"syntax = "proto3";
 message Test { }
-"#)
-            .expect("Error parsing proto file");
+"#);
 
         let mod_dir = Path::new("empty_message_test");
 
-        super::generate_rust_code(fds, mod_dir);
+        super::generate_rust_code(&fds_file, mod_dir);
 
         assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
 r#"#[allow(unused_imports)]
@@ -144,8 +162,12 @@ define_message! {
 
     #[test]
     fn mod_less_sub_messag() {
-        let fds = parse_from_bytes(
-br#"syntax = "proto3";
+       let temp_dir = tempfile::Builder::new()
+            .prefix("proto-test")
+            .tempdir()
+            .unwrap();
+        let fds_file = temp_dir.path().join("fds.bin");
+        parse_proto_to_file(&fds_file, br#"syntax = "proto3";
 message Test {
     Foo test_thing = 1;
     Foo.Bar test_other = 2;
@@ -164,12 +186,11 @@ message Bizz {
     Test.Foo thing2 = 2;
     Test.Foo.Bar thing3 = 3;
 }
-"#)
-    .unwrap();
+"#);
 
         let mod_dir = Path::new("sub_message");
 
-        super::generate_rust_code(fds, mod_dir);
+        super::generate_rust_code(&fds_file, mod_dir);
 
         assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
 r#"#[allow(unused_imports)]
@@ -226,15 +247,25 @@ define_message! {
         let google_proto_include = PathBuf::from(env::var("PROTO_INCLUDE")
             .unwrap());
 
-        let fds = crate::parse::parse_proto_files(
-            true,
-            &[&google_proto_include],
-            &[&google_proto_include.join("google/protobuf/api.proto")])
-            .expect("!!");
+        let temp_dir = tempfile::Builder::new()
+            .prefix("buf-out")
+            .tempdir()
+            .unwrap();
+        let fds_file = temp_dir.path().join("fds.bin");
+
+        let output = process::Command::new("protoc")
+            .arg("--include_imports")
+            .arg(format!("--proto_path={}", google_proto_include.display()))
+            .arg(google_proto_include.join("google/protobuf/api.proto"))
+            .arg(format!("--descriptor_set_out={}", fds_file.display()))
+            .output()
+            .unwrap();
+
+        assert!(output.status.success(), "protoc command returned non success status {}\nstderr:\n{}", output.status, String::from_utf8_lossy(&output.stderr));
 
         let mod_dir = Path::new("google_protos_test");
 
-        super::generate_rust_code(fds, mod_dir);
+        super::generate_rust_code(&fds_file, &mod_dir);
 
         assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
 r#"#[allow(unused_imports)]
@@ -403,27 +434,30 @@ define_message! {
             .expect("Could not covert bytes to utf8")
     }
 
-    use crate::proto::descriptor::FileDescriptorSet;
-
-    pub fn parse_from_bytes(proto: &[u8]) -> std::io::Result<FileDescriptorSet>{
-        let test_dir_name = "proto";
+    pub fn parse_proto_to_file(out_path: &Path, proto: &[u8]) {
+        let test_dir_name = "proto_test";
         let temp_dir = tempfile::Builder::new()
             .prefix(test_dir_name)
             .tempdir()
             .expect("Could not get temp dir");
 
+        let temp_dir = temp_dir.path();
+
         let test_file_name = "test.proto";
 
-        let temp_file_path = &temp_dir.path().join(test_file_name);
+        let temp_file_path = temp_dir.join(test_file_name);
 
-        fs::write(temp_file_path, proto)
+        fs::write(&temp_file_path, proto)
             .expect("Could not write to temp file");
 
-        crate::parse::parse_proto_files(
-            true,
-            &[&temp_dir.path().to_path_buf()],
-            &[temp_file_path]
-        )
-    }
+        let output = process::Command::new("protoc")
+            .arg("--include_imports")
+            .arg(format!("--proto_path={}", temp_dir.display()))
+            .arg(&temp_file_path)
+            .arg(format!("--descriptor_set_out={}", out_path.display()))
+            .output()
+            .unwrap();
 
+        assert!(output.status.success(), "protoc command returned non success status {}\nstderr:\n{}", output.status, String::from_utf8_lossy(&output.stderr));
+    }
 }
