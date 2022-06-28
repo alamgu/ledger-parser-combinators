@@ -531,6 +531,22 @@ impl JsonInterp<JsonBool> for DropInterp {
     }
 }
 
+impl ParserCommon<JsonNull> for DropInterp {
+    type State = ();
+    type Returning = ();
+    fn init(&self) -> Self::State { () }
+}
+
+impl JsonInterp<JsonNull> for DropInterp {
+    #[inline(never)]
+    fn parse<'a>(&self, _state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        match token {
+            JsonToken::Null => { *destination=Some(()); Ok(()) }
+            _ => { Err(Some(OOB::Reject)) }
+        }
+    }
+}
+
 impl ParserCommon<JsonString> for DropInterp {
     type State = DropInterpJsonState;
     type Returning = ();
