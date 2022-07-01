@@ -289,8 +289,6 @@ impl<T, S : JsonInterp<T>> InterpParser<Json<T>> for Json<S> {
 }
 
 
-// Deliberately no JsonInterp<JsonAny> for anything but DropInterp.
-
 #[derive(Clone, Copy, Debug)]
 pub enum DropInterpStateEnum {
     Start,
@@ -423,6 +421,157 @@ impl JsonInterp<JsonAny> for DropInterp {
         };
         match (stack.is_empty(), state) {
             (true, DropInterpStateEnum::AfterValue) => { *destination=Some(()); Ok(()) }
+            _ => { Err(None) }
+        }
+    }
+}
+
+impl<const N : usize> ParserCommon<JsonAny> for JsonStringAccumulate<N> {
+    type State = (DropInterpJsonState, u8);
+    type Returning = ArrayVec<u8,N>;
+    fn init(&self) -> Self::State { (DropInterpJsonState { stack: ArrayVec::new(), state: DropInterpStateEnum::Start, seen_item: false }, 0) }
+}
+
+impl<const N : usize> JsonInterp<JsonAny> for JsonStringAccumulate<N> {
+    #[inline(never)]
+    fn parse<'a>(&self, full_state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        match destination {
+            None => set_from_thunk(destination, || Some(ArrayVec::new())),
+            _ => {}
+        }
+        let mut extend_dest = |c: & [u8]| -> Result<(), Option<OOB>> {
+            destination.as_mut().ok_or(Some(OOB::Reject))?.try_extend_from_slice(c).map_err(|_| Some(OOB::Reject))?;
+            Ok(())
+        };
+        let DropInterpJsonState { ref mut stack, ref mut state, ref mut seen_item } = full_state.0;
+        *state = match (stack.last(), &state, token) {
+
+            // Strings
+            (_, DropInterpStateEnum::Start, JsonToken::BeginString) => {
+                extend_dest(b"\"")?;
+                DropInterpStateEnum::InString
+            }
+            (_, DropInterpStateEnum::InString, JsonToken::StringChunk(c)) => {
+                extend_dest(c)?;
+                DropInterpStateEnum::InString
+            }
+            (_, DropInterpStateEnum::InString, JsonToken::EndString) => {
+                extend_dest(b"\"")?;
+                DropInterpStateEnum::AfterValue
+            }
+            (_, DropInterpStateEnum::InString, _) => {
+                return Err(Some(OOB::Reject)); // Broken invariant from lexer.
+            }
+
+            // Numbers
+            (_, DropInterpStateEnum::Start, JsonToken::BeginNumber) => {
+                DropInterpStateEnum::InNumber
+            }
+            (_, DropInterpStateEnum::InNumber, JsonToken::NumberChunk(c)) => {
+                extend_dest(c)?;
+                DropInterpStateEnum::InNumber
+            }
+            (_, DropInterpStateEnum::InNumber, JsonToken::EndNumber) => {
+                DropInterpStateEnum::AfterValue
+            }
+            (_, DropInterpStateEnum::InNumber, _) => {
+                return Err(Some(OOB::Reject)) // Broken invariant from lexer.
+            }
+
+            // Named terms
+            (_, DropInterpStateEnum::Start, JsonToken::False) => {
+                extend_dest(b"false")?;
+                DropInterpStateEnum::AfterValue
+            }
+            (_, DropInterpStateEnum::Start, JsonToken::Null) => {
+                extend_dest(b"null")?;
+                DropInterpStateEnum::AfterValue
+            }
+            (_, DropInterpStateEnum::Start, JsonToken::True) => {
+                extend_dest(b"true")?;
+                DropInterpStateEnum::AfterValue
+            }
+
+            // Array handling
+            (_, DropInterpStateEnum::Start, JsonToken::BeginArray) => {
+                stack.push(false);
+                *seen_item = false;
+                extend_dest(b"[")?;
+                DropInterpStateEnum::Start
+            }
+            (Some(false), DropInterpStateEnum::Start, JsonToken::EndArray) => {
+                if *seen_item {
+                    return Err(Some(OOB::Reject)) // Trailing comma is not allowed in json.
+                } else {
+                    stack.pop();
+                    extend_dest(b"]")?;
+                    DropInterpStateEnum::AfterValue
+                }
+            }
+            (Some(false), DropInterpStateEnum::AfterValue, JsonToken::ValueSeparator) => {
+                *seen_item = true;
+                extend_dest(b",")?;
+                DropInterpStateEnum::Start
+            }
+            (Some(false), DropInterpStateEnum::AfterValue, JsonToken::EndArray) => {
+                stack.pop();
+                extend_dest(b"]")?;
+                DropInterpStateEnum::AfterValue
+            }
+
+            // Object handling
+            (_, DropInterpStateEnum::Start, JsonToken::BeginObject) => {
+                stack.push(true);
+                *seen_item = false;
+                extend_dest(b"{")?;
+                DropInterpStateEnum::ObjectNamePosition
+            }
+            (Some(true), DropInterpStateEnum::ObjectNamePosition, JsonToken::EndObject) => {
+                if *seen_item {
+                    return Err(Some(OOB::Reject)) // Trailing comma is not allowed in json.
+                } else {
+                    stack.pop();
+                    extend_dest(b"}")?;
+                    DropInterpStateEnum::AfterValue
+                }
+            }
+            //   Names (special strings)
+            (_, DropInterpStateEnum::ObjectNamePosition, JsonToken::BeginString) => {
+                extend_dest(b"\"")?;
+                DropInterpStateEnum::InName
+            }
+            (_, DropInterpStateEnum::InName, JsonToken::BeginString) => {
+                extend_dest(b"\"")?;
+                DropInterpStateEnum::InName
+            }
+            (_, DropInterpStateEnum::InName, JsonToken::StringChunk(c)) => {
+                extend_dest(c)?;
+                DropInterpStateEnum::InName
+            }
+            (_, DropInterpStateEnum::InName, JsonToken::EndString) => {
+                extend_dest(b"\"")?;
+                DropInterpStateEnum::ObjectNameSeparator
+            }
+            //   Field values
+            (_, DropInterpStateEnum::ObjectNameSeparator, JsonToken::NameSeparator) => { // Recursively parse a value.
+                extend_dest(b":")?;
+                DropInterpStateEnum::Start
+            }
+            (Some(true), DropInterpStateEnum::AfterValue, JsonToken::ValueSeparator) => {
+                *seen_item = true;
+                extend_dest(b",")?;
+                DropInterpStateEnum::ObjectNamePosition
+            }
+            (Some(true), DropInterpStateEnum::AfterValue, JsonToken::EndObject) => {
+                stack.pop();
+                extend_dest(b"}")?;
+                DropInterpStateEnum::AfterValue
+            }
+
+            _ => { return Err(Some(OOB::Reject)) } // Invalid json structure.
+        };
+        match (stack.is_empty(), state) {
+            (true, DropInterpStateEnum::AfterValue) => { Ok(()) }
             _ => { Err(None) }
         }
     }
