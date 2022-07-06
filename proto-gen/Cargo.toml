@@ -11,3 +11,6 @@ tempfile = "3.3"
 
 [build-dependencies]
 protoc-rust= "2.27"
+
+[dev-dependencies]
+pretty_assertions = "1.2"

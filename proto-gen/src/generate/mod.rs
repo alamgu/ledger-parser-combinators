@@ -57,6 +57,7 @@ pub mod tests {
     use std::fs;
     use std::path::Path;
     use std::process;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn cosmos_sign_doc() {
