@@ -101,9 +101,13 @@ impl proto::descriptor::EnumDescriptorProto {
         // options for enum type
         code.push_str(&format!("define_enum! {{\n    {} {{\n", name));
 
-        for value in &self.value {
-            code.push_str(&format!("        {},\n",&value.to_rust_macro()));
-        }
+        let a = self.value.iter()
+            .map(|f| format!("        {}", f.to_rust_macro()))
+            .collect::<Vec<_>>()
+            .join(",\n");
+
+        code.push_str(&a);
+        code.push('\n');
 
         code.push_str("    }\n}\n");
 

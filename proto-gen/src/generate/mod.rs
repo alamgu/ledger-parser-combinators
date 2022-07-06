@@ -309,7 +309,7 @@ define_enum! {
         TYPE_SFIXED32 = 15,
         TYPE_SFIXED64 = 16,
         TYPE_SINT32 = 17,
-        TYPE_SINT64 = 18,
+        TYPE_SINT64 = 18
     }
 }
 define_enum! {
@@ -317,7 +317,7 @@ define_enum! {
         CARDINALITY_UNKNOWN = 0,
         CARDINALITY_OPTIONAL = 1,
         CARDINALITY_REQUIRED = 2,
-        CARDINALITY_REPEATED = 3,
+        CARDINALITY_REPEATED = 3
     }
 }
 "#);
@@ -387,7 +387,7 @@ define_message! {
 define_enum! {
     Syntax {
         SYNTAX_PROTO2 = 0,
-        SYNTAX_PROTO3 = 1,
+        SYNTAX_PROTO3 = 1
     }
 }
 define_message! {
