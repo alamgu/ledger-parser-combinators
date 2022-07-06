@@ -3,7 +3,10 @@ use std::path::Path;
 
 impl proto::descriptor::FileDescriptorProto {
     pub fn gen_rust(&self, root_dir: &Path) {
-        assert_eq!(self.get_syntax(), "proto3", "Syntax specifer is not \"proto3\"");
+        if self.get_syntax() != "proto3" {
+            eprintln!("Syntax specifer is not \"proto3\". Skiping file: \"{}\"", self.get_name());
+            return;
+        }
 
         // package: Should be used for building the module namespace
         let package_path = self.get_package()
