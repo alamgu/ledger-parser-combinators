@@ -196,13 +196,6 @@ use std::fs::OpenOptions;
 use std::fs;
 use std::io::Write;
 
-const HEADER_OF_EVERY_FILE: &[u8; 183] =
-br#"#[allow(unused_imports)]
-use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{schema::*, async_parser::*}};
-#[allow(unused_imports)]
-use core::future::Future;
-"#;
-
 // Add code into a module path, writing module decraltions where missing from root/mod.rs down.
 // And writing the code to a mod.rs file at the end of the mod_path
 pub fn add_to_mod(root: &Path, mod_path: &[&str], code: &[u8]){
@@ -241,7 +234,12 @@ pub fn write_to_file_ensure_header(file_path: &Path, code: &[u8]) {
         .expect("Could not open module file");
 
     if !file_exsists {
-        file.write_all(HEADER_OF_EVERY_FILE)
+        file.write_all(br#"#[allow(unused_imports)]
+use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
+#[allow(unused_imports)]
+use core::future::Future;
+
+"#)
             .expect("Cold not write header in module file");
     }
 
