@@ -97,29 +97,36 @@ r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
+
 #[allow(non_camel_case_types)]
 #[allow(dead_code)]
 pub mod cosmos;
+
 "#);
         assert_eq!(string_from_path(&mod_dir.join("cosmos/mod.rs")),
 r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
+
 pub mod tx;
+
 "#);
         assert_eq!(string_from_path(&mod_dir.join("cosmos/tx/mod.rs")),
 r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
+
 pub mod v1beta1;
+
 "#);
         assert_eq!(string_from_path(&mod_dir.join("cosmos/tx/v1beta1/mod.rs")),
 r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
+
 define_message! {
     SignDoc {
         body_bytes: bytes = 1,
@@ -128,6 +135,7 @@ define_message! {
         account_number: uint64 = 4
     }
 }
+
 "#);
     }
 
@@ -151,6 +159,7 @@ r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
+
 #[allow(non_camel_case_types)]
 #[allow(dead_code)]
 define_message! {
@@ -158,6 +167,7 @@ define_message! {
 
     }
 }
+
 "#);
     }
 
@@ -198,15 +208,18 @@ r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
+
 #[allow(non_camel_case_types)]
 #[allow(dead_code)]
 pub mod test;
+
 define_message! {
     Test {
         test_thing: message(test::Foo) = 1,
         test_other: message(test::foo::Bar) = 2
     }
 }
+
 define_message! {
     Bizz {
         thing: message(Test) = 1,
@@ -214,19 +227,23 @@ define_message! {
         thing3: message(test::foo::Bar) = 3
     }
 }
+
 "#);
         assert_eq!(string_from_path(&mod_dir.join("test/mod.rs")),
 r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
+
 pub mod foo;
+
 define_message! {
     Foo {
         foo_thing: message(super::Test) = 1,
         foo_other: message(super::test::foo::Bar) = 2
     }
 }
+
 "#);
 
         assert_eq!(string_from_path(&mod_dir.join("test/foo/mod.rs")),
@@ -234,12 +251,14 @@ r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
+
 define_message! {
     Bar {
         thing: message(super::super::Test) = 1,
         other: message(super::super::test::Foo) = 2
     }
 }
+
 "#);
     }
 
@@ -273,22 +292,27 @@ r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
+
 #[allow(non_camel_case_types)]
 #[allow(dead_code)]
 pub mod google;
+
 "#);
         assert_eq!(string_from_path(&mod_dir.join("google/mod.rs")),
 r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
+
 pub mod protobuf;
+
 "#);
         assert_eq!(string_from_path(&mod_dir.join("google/protobuf/field/mod.rs")),
 r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
+
 define_enum! {
     Kind {
         TYPE_UNKNOWN = 0,
@@ -312,6 +336,7 @@ define_enum! {
         TYPE_SINT64 = 18
     }
 }
+
 define_enum! {
     Cardinality {
         CARDINALITY_UNKNOWN = 0,
@@ -320,23 +345,27 @@ define_enum! {
         CARDINALITY_REPEATED = 3
     }
 }
+
 "#);
         assert_eq!(string_from_path(&mod_dir.join("google/protobuf/mod.rs")),
 r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
+
 define_message! {
     SourceContext {
         file_name: string = 1
     }
 }
+
 define_message! {
     Any {
         type_url: string = 1,
         value: bytes = 2
     }
 }
+
 define_message! {
     Type {
         name: string = 1,
@@ -347,7 +376,9 @@ define_message! {
         syntax: enum(super::super::google::protobuf::Syntax) = 6
     }
 }
+
 pub mod field;
+
 define_message! {
     Field {
         kind: enum(super::super::google::protobuf::field::Kind) = 1,
@@ -362,6 +393,7 @@ define_message! {
         default_value: string = 11
     }
 }
+
 define_message! {
     Enum {
         name: string = 1,
@@ -371,6 +403,7 @@ define_message! {
         syntax: enum(super::super::google::protobuf::Syntax) = 5
     }
 }
+
 define_message! {
     EnumValue {
         name: string = 1,
@@ -378,18 +411,21 @@ define_message! {
         options: repeated(message(super::super::google::protobuf::Option)) = 3
     }
 }
+
 define_message! {
     Option {
         name: string = 1,
         value: message(super::super::google::protobuf::Any) = 2
     }
 }
+
 define_enum! {
     Syntax {
         SYNTAX_PROTO2 = 0,
         SYNTAX_PROTO3 = 1
     }
 }
+
 define_message! {
     Api {
         name: string = 1,
@@ -401,6 +437,7 @@ define_message! {
         syntax: enum(super::super::google::protobuf::Syntax) = 7
     }
 }
+
 define_message! {
     Method {
         name: string = 1,
@@ -412,12 +449,14 @@ define_message! {
         syntax: enum(super::super::google::protobuf::Syntax) = 7
     }
 }
+
 define_message! {
     Mixin {
         name: string = 1,
         root: string = 2
     }
 }
+
 "#);
     }
 

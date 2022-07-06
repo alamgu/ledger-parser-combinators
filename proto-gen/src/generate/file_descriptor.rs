@@ -82,7 +82,7 @@ impl proto::descriptor::DescriptorProto {
         // reserved_name
         // special_fields
 
-        code.push_str(&format!("    }}\n}}\n"));
+        code.push_str("    }\n}\n\n");
 
         add_to_mod(root_dir, package_path, code.as_bytes());
     }
@@ -109,7 +109,7 @@ impl proto::descriptor::EnumDescriptorProto {
         code.push_str(&a);
         code.push('\n');
 
-        code.push_str("    }\n}\n");
+        code.push_str("    }\n}\n\n");
 
         add_to_mod(root_dir, package_path, code.as_bytes());
     }
@@ -215,7 +215,7 @@ pub fn add_to_mod(root: &Path, mod_path: &[&str], code: &[u8]){
             fs::create_dir(&mod_dir)
                 .expect("Could not create module dir");
             // Include the module
-            write_to_file_ensure_header(&root.join("mod.rs"), &format!("pub mod {};\n", new_mod).as_bytes());
+            write_to_file_ensure_header(&root.join("mod.rs"), &format!("pub mod {};\n\n", new_mod).as_bytes());
         }
 
         // Add the code deeper in the module tree
