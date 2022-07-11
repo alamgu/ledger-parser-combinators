@@ -920,7 +920,10 @@ impl<const N : usize> JsonInterp<JsonString> for JsonStringAccumulate<N> {
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         match (state, token) {
             (state@JsonStringAccumulateState::Start, JsonToken::BeginString) => {
-                set_from_thunk(destination, || Some(ArrayVec::new()));
+                match destination { // This is intentional, it allows caller to append to an ArrayVec if necessary
+                    None => set_from_thunk(destination, || Some(ArrayVec::new())),
+                    _ => {}
+                }
                 *state = JsonStringAccumulateState::Accumulating;
                 Err(None)
             }
