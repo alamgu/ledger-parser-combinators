@@ -328,7 +328,7 @@ macro_rules! define_enum {
     { $name:ident { $($variant:ident = $number:literal),* } } =>
     {
         $crate::protobufs::async_parser::paste! {
-            #[derive($crate::num_derive::FromPrimitive, PartialEq)]
+            #[derive(FromPrimitive, PartialEq)]
             #[repr(u32)]
             pub enum $name {
                 $([<$variant:camel>] = $number),*
