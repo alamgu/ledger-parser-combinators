@@ -250,7 +250,7 @@ macro_rules! define_message {
 
             pub struct [<$name:camel>];
 
-            impl<$([<Field $field:camel Interp>] : HasOutput<[<$schemaType:camel>], Output=()>),*> HasOutput<[<$name:camel>]> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
+            impl<$([<Field $field:camel Interp>] : HasOutput<$schemaType, Output=()>),*> HasOutput<[<$name:camel>]> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
                 type Output = ();
             }
 
@@ -258,7 +258,7 @@ macro_rules! define_message {
                 const FORMAT: ProtobufWire = ProtobufWire::LengthDelimited;
             }
 
-            impl<BS: 'static + Clone + Readable,$([<Field $field:camel Interp>] : HasOutput<[<$schemaType:camel>], Output=()> + $parseTrait<[<$schemaType:camel>], TrackLength<BS>>),*> LengthDelimitedParser<[<$name:camel>], BS> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
+            impl<BS: 'static + Clone + Readable,$([<Field $field:camel Interp>] : HasOutput<$schemaType, Output=()> + $parseTrait<$schemaType, TrackLength<BS>>),*> LengthDelimitedParser<[<$name:camel>], BS> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
                 fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
                     async move {
                         // First, structural check:
@@ -284,7 +284,7 @@ macro_rules! define_message {
                                 let tag : u32 = parse_varint(&mut tl).await;
                                 let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject().await, };
                                 if tag >> 3 == $number {
-                                    if wire != [<$schemaType:camel>]::FORMAT {
+                                    if wire != $schemaType::FORMAT {
                                         return reject().await;
                                     }
                                     define_message! { @call_parser_for, $parseTrait, tl, self.[<field_ $field:snake>] }
@@ -605,14 +605,20 @@ mod test {
     }
 
     define_message! { OtherMessage { foo: bytes = 0 } }
-    define_message! { SimpleMessage { foo: message(otherMessage) = 0, bar: enum(SimpleEnum) = 1 } }
+
+    define_message! { @impl FooMessage {
+            , foo : (LengthDelimitedParser, super::test::OtherMessage, false) = 0
+            , bar : (LengthDelimitedParser, super::test::OtherMessage, true) = 1
+        }
+    }
+    define_message! { SimpleMessage { foo: message(OtherMessage) = 0, bar: enum(SimpleEnum) = 1 } }
     define_enum! { SimpleEnum { default = 0, noodle = 1 } }
     define_message! {
         SignDoc {
             body_bytes: bytes = 1,
             auth_info_bytes: bytes = 2,
             chain_id: string = 3,
-            account_number: uint64 = 4
+            account_number: Uint64 = 4
         }}
 
     define_message! {
@@ -625,7 +631,7 @@ mod test {
         TxBody {
             messages: repeated(message(Any)) = 1,
             memo: string = 2,
-            timeout_height: int64 = 3,
+            timeout_height: Int64 = 3,
             extension_options: repeated(message(Any)) = 1023
         }
     }
