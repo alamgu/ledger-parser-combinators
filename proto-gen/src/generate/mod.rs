@@ -127,12 +127,12 @@ use ledger_parser_combinators::{define_message, define_enum, interp_parser::Defa
 #[allow(unused_imports)]
 use core::future::Future;
 
-define_message! {
+define_message! { @impl
     SignDoc {
-        body_bytes: bytes = 1,
-        auth_info_bytes: bytes = 2,
-        chain_id: string = 3,
-        account_number: uint64 = 4
+        , body_bytes : (LengthDelimitedParser, Bytes, false) = 1
+        , auth_info_bytes : (LengthDelimitedParser, Bytes, false) = 2
+        , chain_id : (LengthDelimitedParser, String, false) = 3
+        , account_number : (AsyncParser, uint64, false) = 4
     }
 }
 
@@ -162,7 +162,7 @@ use core::future::Future;
 
 #[allow(non_camel_case_types)]
 #[allow(dead_code)]
-define_message! {
+define_message! { @impl
     Test {
 
     }
@@ -213,18 +213,18 @@ use core::future::Future;
 #[allow(dead_code)]
 pub mod test;
 
-define_message! {
+define_message! { @impl
     Test {
-        test_thing: message(test::Foo) = 1,
-        test_other: message(test::foo::Bar) = 2
+        , test_thing : (LengthDelimitedParser, test::Foo, false) = 1
+        , test_other : (LengthDelimitedParser, test::foo::Bar, false) = 2
     }
 }
 
-define_message! {
+define_message! { @impl
     Bizz {
-        thing: message(Test) = 1,
-        thing2: message(test::Foo) = 2,
-        thing3: message(test::foo::Bar) = 3
+        , thing : (LengthDelimitedParser, Test, false) = 1
+        , thing2 : (LengthDelimitedParser, test::Foo, false) = 2
+        , thing3 : (LengthDelimitedParser, test::foo::Bar, false) = 3
     }
 }
 
@@ -237,10 +237,10 @@ use core::future::Future;
 
 pub mod foo;
 
-define_message! {
+define_message! { @impl
     Foo {
-        foo_thing: message(super::Test) = 1,
-        foo_other: message(super::test::foo::Bar) = 2
+        , foo_thing : (LengthDelimitedParser, super::Test, false) = 1
+        , foo_other : (LengthDelimitedParser, super::test::foo::Bar, false) = 2
     }
 }
 
@@ -252,10 +252,10 @@ use ledger_parser_combinators::{define_message, define_enum, interp_parser::Defa
 #[allow(unused_imports)]
 use core::future::Future;
 
-define_message! {
+define_message! { @impl
     Bar {
-        thing: message(super::super::Test) = 1,
-        other: message(super::super::test::Foo) = 2
+        , thing : (LengthDelimitedParser, super::super::Test, false) = 1
+        , other : (LengthDelimitedParser, super::super::test::Foo, false) = 2
     }
 }
 
@@ -353,69 +353,69 @@ use ledger_parser_combinators::{define_message, define_enum, interp_parser::Defa
 #[allow(unused_imports)]
 use core::future::Future;
 
-define_message! {
+define_message! { @impl
     SourceContext {
-        file_name: string = 1
+        , file_name : (LengthDelimitedParser, String, false) = 1
     }
 }
 
-define_message! {
+define_message! { @impl
     Any {
-        type_url: string = 1,
-        value: bytes = 2
+        , type_url : (LengthDelimitedParser, String, false) = 1
+        , value : (LengthDelimitedParser, Bytes, false) = 2
     }
 }
 
-define_message! {
+define_message! { @impl
     Type {
-        name: string = 1,
-        fields: repeated(message(super::super::google::protobuf::Field)) = 2,
-        oneofs: repeated(string) = 3,
-        options: repeated(message(super::super::google::protobuf::Option)) = 4,
-        source_context: message(super::super::google::protobuf::SourceContext) = 5,
-        syntax: enum(super::super::google::protobuf::Syntax) = 6
+        , name : (LengthDelimitedParser, String, false) = 1
+        , fields : (LengthDelimitedParser, super::super::google::protobuf::Field, true) = 2
+        , oneofs : (LengthDelimitedParser, String, true) = 3
+        , options : (LengthDelimitedParser, super::super::google::protobuf::Option, true) = 4
+        , source_context : (LengthDelimitedParser, super::super::google::protobuf::SourceContext, false) = 5
+        , syntax : (AsyncParser, super::super::google::protobuf::Syntax, false) = 6
     }
 }
 
 pub mod field;
 
-define_message! {
+define_message! { @impl
     Field {
-        kind: enum(super::super::google::protobuf::field::Kind) = 1,
-        cardinality: enum(super::super::google::protobuf::field::Cardinality) = 2,
-        number: int32 = 3,
-        name: string = 4,
-        type_url: string = 6,
-        oneof_index: int32 = 7,
-        packed: bool = 8,
-        options: repeated(message(super::super::google::protobuf::Option)) = 9,
-        json_name: string = 10,
-        default_value: string = 11
+        , kind : (AsyncParser, super::super::google::protobuf::field::Kind, false) = 1
+        , cardinality : (AsyncParser, super::super::google::protobuf::field::Cardinality, false) = 2
+        , number : (AsyncParser, int32, false) = 3
+        , name : (LengthDelimitedParser, String, false) = 4
+        , type_url : (LengthDelimitedParser, String, false) = 6
+        , oneof_index : (AsyncParser, int32, false) = 7
+        , packed : (AsyncParser, bool, false) = 8
+        , options : (LengthDelimitedParser, super::super::google::protobuf::Option, true) = 9
+        , json_name : (LengthDelimitedParser, String, false) = 10
+        , default_value : (LengthDelimitedParser, String, false) = 11
     }
 }
 
-define_message! {
+define_message! { @impl
     Enum {
-        name: string = 1,
-        enumvalue: repeated(message(super::super::google::protobuf::EnumValue)) = 2,
-        options: repeated(message(super::super::google::protobuf::Option)) = 3,
-        source_context: message(super::super::google::protobuf::SourceContext) = 4,
-        syntax: enum(super::super::google::protobuf::Syntax) = 5
+        , name : (LengthDelimitedParser, String, false) = 1
+        , enumvalue : (LengthDelimitedParser, super::super::google::protobuf::EnumValue, true) = 2
+        , options : (LengthDelimitedParser, super::super::google::protobuf::Option, true) = 3
+        , source_context : (LengthDelimitedParser, super::super::google::protobuf::SourceContext, false) = 4
+        , syntax : (AsyncParser, super::super::google::protobuf::Syntax, false) = 5
     }
 }
 
-define_message! {
+define_message! { @impl
     EnumValue {
-        name: string = 1,
-        number: int32 = 2,
-        options: repeated(message(super::super::google::protobuf::Option)) = 3
+        , name : (LengthDelimitedParser, String, false) = 1
+        , number : (AsyncParser, int32, false) = 2
+        , options : (LengthDelimitedParser, super::super::google::protobuf::Option, true) = 3
     }
 }
 
-define_message! {
+define_message! { @impl
     Option {
-        name: string = 1,
-        value: message(super::super::google::protobuf::Any) = 2
+        , name : (LengthDelimitedParser, String, false) = 1
+        , value : (LengthDelimitedParser, super::super::google::protobuf::Any, false) = 2
     }
 }
 
@@ -426,34 +426,34 @@ define_enum! {
     }
 }
 
-define_message! {
+define_message! { @impl
     Api {
-        name: string = 1,
-        methods: repeated(message(super::super::google::protobuf::Method)) = 2,
-        options: repeated(message(super::super::google::protobuf::Option)) = 3,
-        version: string = 4,
-        source_context: message(super::super::google::protobuf::SourceContext) = 5,
-        mixins: repeated(message(super::super::google::protobuf::Mixin)) = 6,
-        syntax: enum(super::super::google::protobuf::Syntax) = 7
+        , name : (LengthDelimitedParser, String, false) = 1
+        , methods : (LengthDelimitedParser, super::super::google::protobuf::Method, true) = 2
+        , options : (LengthDelimitedParser, super::super::google::protobuf::Option, true) = 3
+        , version : (LengthDelimitedParser, String, false) = 4
+        , source_context : (LengthDelimitedParser, super::super::google::protobuf::SourceContext, false) = 5
+        , mixins : (LengthDelimitedParser, super::super::google::protobuf::Mixin, true) = 6
+        , syntax : (AsyncParser, super::super::google::protobuf::Syntax, false) = 7
     }
 }
 
-define_message! {
+define_message! { @impl
     Method {
-        name: string = 1,
-        request_type_url: string = 2,
-        request_streaming: bool = 3,
-        response_type_url: string = 4,
-        response_streaming: bool = 5,
-        options: repeated(message(super::super::google::protobuf::Option)) = 6,
-        syntax: enum(super::super::google::protobuf::Syntax) = 7
+        , name : (LengthDelimitedParser, String, false) = 1
+        , request_type_url : (LengthDelimitedParser, String, false) = 2
+        , request_streaming : (AsyncParser, bool, false) = 3
+        , response_type_url : (LengthDelimitedParser, String, false) = 4
+        , response_streaming : (AsyncParser, bool, false) = 5
+        , options : (LengthDelimitedParser, super::super::google::protobuf::Option, true) = 6
+        , syntax : (AsyncParser, super::super::google::protobuf::Syntax, false) = 7
     }
 }
 
-define_message! {
+define_message! { @impl
     Mixin {
-        name: string = 1,
-        root: string = 2
+        , name : (LengthDelimitedParser, String, false) = 1
+        , root : (LengthDelimitedParser, String, false) = 2
     }
 }
 

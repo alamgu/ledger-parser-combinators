@@ -57,16 +57,16 @@ impl proto::descriptor::DescriptorProto {
         }
 
         let mut code = String::new();
-        code.push_str(&format!("define_message! {{\n    {} {{\n", name));
+        code.push_str(&format!("define_message! {{ @impl\n    {} {{\n", name));
 
         let package_depth = package_path.len();
         // field
         //
         // Fields in the message
         let a = self.field.iter()
-            .map(|f| format!("        {}", f.generate_macro_code_for_field_descriptor(package_depth)))
+            .map(|f| format!("        , {}", f.generate_impl_feild(package_depth)))
             .collect::<Vec<_>>()
-            .join(",\n");
+            .join("\n");
 
         code.push_str(&a);
         code.push('\n');
@@ -130,46 +130,98 @@ impl proto::descriptor::EnumValueDescriptorProto {
 use proto::descriptor::FieldDescriptorProto_Label;
 
 impl proto::descriptor::FieldDescriptorProto {
-    fn generate_macro_code_for_field_descriptor(&self, reference_depth: usize) -> String {
+    fn generate_impl_feild(&self, reference_depth: usize) -> String {
         let name = self.get_name();
         let label = self.get_label();
-        let t = self.get_field_type()
-            .to_string(self.get_type_name(), reference_depth);
-
+        let _type = self.get_field_type();
         let number = self.get_number();
+        let packed = self.get_options().get_packed();
+        let type_name = self.get_type_name();
 
-        if label == FieldDescriptorProto_Label::LABEL_REPEATED {
-            format!("{}: repeated({}) = {}", name, t, number)
-        }
-        else {
-            format!("{}: {} = {}", name, t, number)
-        }
+        let parse_trait = if packed {
+            // Packed repeated fields are length-delimited
+            // In proto3 `repeated` fields of *scalar numeric types* are `packed` by *default*
+            // `packed` is an option on a field and may be set to a non default value
+            // In proto2 `packed` is never defaulted to true
+            "LengthDelimitedParser"
+        } else {
+            _type.parse_trait()
+        };
+
+        let is_repeated = label == FieldDescriptorProto_Label::LABEL_REPEATED;
+        format!("{} : ({}, {}, {}) = {}",
+                name,
+                parse_trait,
+                _type.rust_type1(type_name, reference_depth),
+                if is_repeated { "true" } else { "false" },
+                number
+        )
     }
 }
 
 use proto::descriptor::FieldDescriptorProto_Type;
 
 impl proto::descriptor::FieldDescriptorProto_Type {
-    fn to_string(&self, type_name: &str, reference_depth: usize) -> String {
-        match self{
-            FieldDescriptorProto_Type::TYPE_DOUBLE => String::from("double"),
-            FieldDescriptorProto_Type::TYPE_FLOAT => String::from("float"),
-            FieldDescriptorProto_Type::TYPE_INT64 => String::from("int64"),
-            FieldDescriptorProto_Type::TYPE_UINT64 => String::from("uint64"),
-            FieldDescriptorProto_Type::TYPE_INT32 => String::from("int32"),
-            FieldDescriptorProto_Type::TYPE_FIXED64 => String::from("fixed64"),
-            FieldDescriptorProto_Type::TYPE_FIXED32 => String::from("fixed32"),
-            FieldDescriptorProto_Type::TYPE_BOOL => String::from("bool"),
-            FieldDescriptorProto_Type::TYPE_STRING => String::from("string"),
-            FieldDescriptorProto_Type::TYPE_GROUP => String::from("group"),
-            FieldDescriptorProto_Type::TYPE_BYTES => String::from("bytes"),
-            FieldDescriptorProto_Type::TYPE_UINT32 => String::from("uint32"),
-            FieldDescriptorProto_Type::TYPE_SFIXED32 => String::from("sfixed32"),
-            FieldDescriptorProto_Type::TYPE_SFIXED64 => String::from("sfixed64"),
-            FieldDescriptorProto_Type::TYPE_SINT32 => String::from("sint32"),
-            FieldDescriptorProto_Type::TYPE_SINT64 => String::from("sint64"),
-            FieldDescriptorProto_Type::TYPE_MESSAGE => format!("message({})", buff_ref_to_rust_ref(type_name, reference_depth)),
-            FieldDescriptorProto_Type::TYPE_ENUM  => format!("enum({})", buff_ref_to_rust_ref(type_name, reference_depth)),
+    fn rust_type1(&self, type_name: &str, reference_depth: usize) -> String {
+        match self {
+            FieldDescriptorProto_Type::TYPE_MESSAGE => buff_ref_to_rust_ref(type_name, reference_depth),
+            FieldDescriptorProto_Type::TYPE_ENUM  => buff_ref_to_rust_ref(type_name, reference_depth),
+            other => String::from(other.rust_type())
+        }
+    }
+
+    fn rust_type(&self) -> &'static str {
+        match self {
+            FieldDescriptorProto_Type::TYPE_DOUBLE => "double",
+            FieldDescriptorProto_Type::TYPE_FLOAT => "float",
+            FieldDescriptorProto_Type::TYPE_INT64 => "int64",
+            FieldDescriptorProto_Type::TYPE_UINT64 => "uint64",
+            FieldDescriptorProto_Type::TYPE_INT32 => "int32",
+            FieldDescriptorProto_Type::TYPE_FIXED64 => "fixed64",
+            FieldDescriptorProto_Type::TYPE_FIXED32 => "fixed32",
+            FieldDescriptorProto_Type::TYPE_BOOL => "bool",
+            FieldDescriptorProto_Type::TYPE_STRING => "String",
+            FieldDescriptorProto_Type::TYPE_BYTES => "Bytes",
+            FieldDescriptorProto_Type::TYPE_UINT32 => "uint32",
+            FieldDescriptorProto_Type::TYPE_SFIXED32 => "sfixed32",
+            FieldDescriptorProto_Type::TYPE_SFIXED64 => "sfixed64",
+            FieldDescriptorProto_Type::TYPE_SINT32 => "sint32",
+            FieldDescriptorProto_Type::TYPE_SINT64 => "sint64",
+
+            FieldDescriptorProto_Type::TYPE_GROUP |
+            FieldDescriptorProto_Type::TYPE_MESSAGE |
+            FieldDescriptorProto_Type::TYPE_ENUM
+                => panic!("wops")
+        }
+    }
+
+    fn parse_trait(&self) -> &'static str {
+        match self {
+            FieldDescriptorProto_Type::TYPE_INT32 |
+            FieldDescriptorProto_Type::TYPE_INT64 |
+            FieldDescriptorProto_Type::TYPE_UINT32 |
+            FieldDescriptorProto_Type::TYPE_UINT64 |
+            FieldDescriptorProto_Type::TYPE_SINT32 |
+            FieldDescriptorProto_Type::TYPE_SINT64 |
+            FieldDescriptorProto_Type::TYPE_BOOL |
+            FieldDescriptorProto_Type::TYPE_ENUM |
+
+            FieldDescriptorProto_Type::TYPE_FIXED64 |
+            FieldDescriptorProto_Type::TYPE_SFIXED64 |
+            FieldDescriptorProto_Type::TYPE_DOUBLE |
+
+            FieldDescriptorProto_Type::TYPE_FIXED32 |
+            FieldDescriptorProto_Type::TYPE_SFIXED32 |
+            FieldDescriptorProto_Type::TYPE_FLOAT |
+
+            FieldDescriptorProto_Type::TYPE_GROUP
+                => "AsyncParser",
+
+            FieldDescriptorProto_Type::TYPE_STRING |
+            FieldDescriptorProto_Type::TYPE_BYTES |
+            FieldDescriptorProto_Type::TYPE_MESSAGE
+                => "LengthDelimitedParser"
+
         }
     }
 }
