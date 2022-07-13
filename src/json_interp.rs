@@ -1292,6 +1292,17 @@ impl<A, S: JsonInterp<A>> JsonInterp<A> for Preaction<S> {
     }
 }
 
+impl<A, R, S : JsonInterp<A>> JsonInterp<A> for MoveAction<S, fn(<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>> {
+    #[inline(never)]
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        self.0.parse(&mut state.0, token, &mut state.1)?;
+        match (self.1)(core::mem::take(&mut state.1).ok_or(Some(OOB::Reject))?, destination) {
+            None => { Err(Some(OOB::Reject)) }
+            Some(()) => { Ok(()) }
+        }
+    }
+}
+
 /*
 impl JsonInterp<JsonStringEnum<STRS>> for DefaultInterp {
     type State = DropInterpJsonState;
