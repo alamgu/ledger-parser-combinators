@@ -132,7 +132,7 @@ define_message! { @impl
         , body_bytes : (LengthDelimitedParser, Bytes, false) = 1
         , auth_info_bytes : (LengthDelimitedParser, Bytes, false) = 2
         , chain_id : (LengthDelimitedParser, String, false) = 3
-        , account_number : (AsyncParser, uint64, false) = 4
+        , account_number : (AsyncParser, Uint64, false) = 4
     }
 }
 
@@ -383,11 +383,11 @@ define_message! { @impl
     Field {
         , kind : (AsyncParser, super::super::google::protobuf::field::Kind, false) = 1
         , cardinality : (AsyncParser, super::super::google::protobuf::field::Cardinality, false) = 2
-        , number : (AsyncParser, int32, false) = 3
+        , number : (AsyncParser, Int32, false) = 3
         , name : (LengthDelimitedParser, String, false) = 4
         , type_url : (LengthDelimitedParser, String, false) = 6
-        , oneof_index : (AsyncParser, int32, false) = 7
-        , packed : (AsyncParser, bool, false) = 8
+        , oneof_index : (AsyncParser, Int32, false) = 7
+        , packed : (AsyncParser, Bool, false) = 8
         , options : (LengthDelimitedParser, super::super::google::protobuf::Option, true) = 9
         , json_name : (LengthDelimitedParser, String, false) = 10
         , default_value : (LengthDelimitedParser, String, false) = 11
@@ -407,7 +407,7 @@ define_message! { @impl
 define_message! { @impl
     EnumValue {
         , name : (LengthDelimitedParser, String, false) = 1
-        , number : (AsyncParser, int32, false) = 2
+        , number : (AsyncParser, Int32, false) = 2
         , options : (LengthDelimitedParser, super::super::google::protobuf::Option, true) = 3
     }
 }
@@ -442,9 +442,9 @@ define_message! { @impl
     Method {
         , name : (LengthDelimitedParser, String, false) = 1
         , request_type_url : (LengthDelimitedParser, String, false) = 2
-        , request_streaming : (AsyncParser, bool, false) = 3
+        , request_streaming : (AsyncParser, Bool, false) = 3
         , response_type_url : (LengthDelimitedParser, String, false) = 4
-        , response_streaming : (AsyncParser, bool, false) = 5
+        , response_streaming : (AsyncParser, Bool, false) = 5
         , options : (LengthDelimitedParser, super::super::google::protobuf::Option, true) = 6
         , syntax : (AsyncParser, super::super::google::protobuf::Syntax, false) = 7
     }

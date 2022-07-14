@@ -174,19 +174,19 @@ impl proto::descriptor::FieldDescriptorProto_Type {
         match self {
             FieldDescriptorProto_Type::TYPE_DOUBLE => "double",
             FieldDescriptorProto_Type::TYPE_FLOAT => "float",
-            FieldDescriptorProto_Type::TYPE_INT64 => "int64",
-            FieldDescriptorProto_Type::TYPE_UINT64 => "uint64",
-            FieldDescriptorProto_Type::TYPE_INT32 => "int32",
+            FieldDescriptorProto_Type::TYPE_INT64 => "Int64",
+            FieldDescriptorProto_Type::TYPE_UINT64 => "Uint64",
+            FieldDescriptorProto_Type::TYPE_INT32 => "Int32",
             FieldDescriptorProto_Type::TYPE_FIXED64 => "fixed64",
             FieldDescriptorProto_Type::TYPE_FIXED32 => "fixed32",
-            FieldDescriptorProto_Type::TYPE_BOOL => "bool",
+            FieldDescriptorProto_Type::TYPE_BOOL => "Bool",
             FieldDescriptorProto_Type::TYPE_STRING => "String",
             FieldDescriptorProto_Type::TYPE_BYTES => "Bytes",
-            FieldDescriptorProto_Type::TYPE_UINT32 => "uint32",
+            FieldDescriptorProto_Type::TYPE_UINT32 => "Uint32",
             FieldDescriptorProto_Type::TYPE_SFIXED32 => "sfixed32",
             FieldDescriptorProto_Type::TYPE_SFIXED64 => "sfixed64",
-            FieldDescriptorProto_Type::TYPE_SINT32 => "sint32",
-            FieldDescriptorProto_Type::TYPE_SINT64 => "sint64",
+            FieldDescriptorProto_Type::TYPE_SINT32 => "Sint32",
+            FieldDescriptorProto_Type::TYPE_SINT64 => "Sint64",
 
             FieldDescriptorProto_Type::TYPE_GROUP |
             FieldDescriptorProto_Type::TYPE_MESSAGE |
