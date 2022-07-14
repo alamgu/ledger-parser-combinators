@@ -24,7 +24,7 @@ num-derive = "0.3.3"
 trie-enum = { git = "https://github.com/ea-nasir/trie-enum" }
 
 [dependencies.ledger-log]
-git = "https://github.com/obsidiansystems/ledger-platform"
+git = "https://github.com/ea-nasir/ledger-log"
 features = ["log_trace"]
 optional = true
 
