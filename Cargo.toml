@@ -35,6 +35,10 @@ features = [ "speculos" ]
 [target.thumbv6m-none-eabi.dev-dependencies]
 testmacro = { git = "https://github.com/yhql/testmacro"}
 
+[target.thumbv6m-none-eabi.dev-dependencies.nanos_sdk]
+git = "https://github.com/LedgerHQ/ledger-nanos-sdk.git"
+features = [ "speculos" ]
+
 [patch."https://github.com/LedgerHQ/ledger-nanos-sdk.git".nanos_sdk]
 git = "https://github.com/ObsidianSystems/ledger-nanos-sdk.git"
 branch = "use-ambient-compiler-and-target"

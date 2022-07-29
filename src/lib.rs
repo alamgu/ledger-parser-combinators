@@ -2,6 +2,8 @@
 #![allow(incomplete_features)]
 #![feature(bindings_after_at)]
 #![feature(const_generics)]
+#![feature(const_mut_refs)]
+#![feature(const_intrinsic_copy)]
 
 #![cfg_attr(all(target_os="nanos", test), no_main)]
 #![cfg_attr(target_os="nanos", feature(custom_test_frameworks))]
@@ -16,6 +18,15 @@ extern crate enum_init;
 //use nanos_sdk::exit_app;
 #[cfg(all(not(target_os = "linux"), test))]
 use nanos_sdk::pic_rs;
+
+#[cfg(not(target_os = "linux"))]
+pub use nanos_sdk::io::Reply;
+
+pub const ERR_RANGE :u16 = 0xD000;
+
+#[cfg(target_os = "linux")]
+#[repr(transparent)]
+pub struct Reply(pub u16);
 
 #[allow(dead_code)]
 #[allow(non_upper_case_globals)]

@@ -16,6 +16,64 @@ use ledger_log::trace;
 #[allow(unused_imports)]
     use nanos_sdk::{TestType}; // , Pic};
 
+pub enum JsonParserError {
+    // _not_ equivalent to the one from interp_parser; used to
+    // indicate which module has the error.
+    CodeInvariantViolation = 0,
+    InvalidJSON,
+    InvalidCharacterInJSON,
+    InvalidValueInitialCharacter,
+    InvalidEscapeSequenceInString,
+    UnicodeEscapesNotSupportedInString,
+    InvalidNamedLiteral,
+    TrailingCommaInJSONArray,
+    TrailingCommaInJSONObject,
+    SchemaViolatedExpectedBoolean,
+    SchemaViolatedExpectedNull,
+    SchemaViolatedExpectedString,
+    SchemaViolatedExpectedNumber,
+    SchemaViolatedExpectedArray,
+    SchemaViolatedExpectedObject,
+
+    AllAlternativesRejected,
+    StringBufferExceeded,
+    ArrayBufferExceeded,
+    NumberBufferExceeded,
+    SimpleActionRejected,
+    SimpleMoveActionRejected,
+    PreactionRejected,
+
+    UnknownKeyForUnspecifiedSchema = 128,
+    // Values above UnknownKeyForUnspecifiedSchema represent unknown keys in particular object schemas.
+}
+
+use JsonParserError as JE;
+
+pub mod error_helpers {
+    use crate::interp_parser::OOB;
+
+pub const fn json_parser_error_to_u16(item: super::JsonParserError) -> u16 {
+        crate::ERR_RANGE | 0x0200 | (item as u8) as u16
+}
+
+impl core::convert::From<super::JsonParserError> for crate::Reply {
+    fn from(item: super::JsonParserError) -> crate::Reply {
+        crate::Reply(crate::ERR_RANGE | 0x0200 | (item as u8) as u16)
+    }
+}
+
+pub const fn err_for(err: super::JsonParserError) -> Option<OOB> {
+    Some(OOB::RejectWithCode(json_parser_error_to_u16(err)))
+}
+
+pub const fn rej_with(err: super::JsonParserError) -> Result<(), Option<OOB>> {
+    Err(err_for(err))
+}
+
+pub const CI : Result<(), Option<OOB>> = rej_with(super::JsonParserError::CodeInvariantViolation);
+pub const CIE : Option<OOB> = Some(OOB::RejectWithCode(json_parser_error_to_u16(super::JsonParserError::CodeInvariantViolation)));
+}
+use error_helpers::*;
 
 // Monoid when A=Self, otherwise conceptually obeys
 // self.add_and_set(a: A) = self.addAndSet(pure(a) : Self)
@@ -110,7 +168,7 @@ fn get_json_token<'a>(state: &mut JsonTokenizerState, chunk: &'a [u8]) -> Result
                     Some((a, tail)) => {
                         let c = match char::from_u32(*a as u32) {
                             Some(c) => { c }
-                            None => { break reject(cursor); }
+                            None => { break reject_with(JE::InvalidCharacterInJSON, cursor); }
                         };
                         if matches!(c, '\t' | '\n' | '\r' | ' ') {
                             cursor = tail;
@@ -135,7 +193,7 @@ fn get_json_token<'a>(state: &mut JsonTokenizerState, chunk: &'a [u8]) -> Result
                             't' => { *state = JsonTokenizerState::InTrue(1); cursor = tail; continue; }
                             'n' => { *state = JsonTokenizerState::InNull(1); cursor = tail; continue; }
                             'f' => { *state = JsonTokenizerState::InFalse(1); cursor = tail; continue; }
-                            _ => { reject(cursor) }
+                            _ => { reject_with(JE::InvalidValueInitialCharacter, cursor) }
                         }.and_then(|a| Ok((a, tail)))
                     }
                     None => { need_more(cursor) }
@@ -147,7 +205,7 @@ fn get_json_token<'a>(state: &mut JsonTokenizerState, chunk: &'a [u8]) -> Result
                     Some((a, tail)) => {
                         let next_char = match char::from_u32(*a as u32) {
                             Some(c) => { c }
-                            None => { break reject(cursor); }
+                            None => { break reject_with(JE::InvalidCharacterInJSON, cursor); }
                         };
                         match escape_state {
                             JsonStringEscapeState::NotEscaped => {
@@ -190,13 +248,13 @@ fn get_json_token<'a>(state: &mut JsonTokenizerState, chunk: &'a [u8]) -> Result
                                         Ok(JsonToken::StringChunk(&cursor[0..0]))
                                     }
                                     _ => {
-                                        reject(cursor)
+                                        reject_with(JE::InvalidEscapeSequenceInString, cursor)
                                     }
                                 }
                             }
                             JsonStringEscapeState::InSequence(ref mut _n) => {
                                 // No unicode support yet, sorry.
-                                reject(cursor)
+                                reject_with(JE::UnicodeEscapesNotSupportedInString, cursor)
                             }
                         }.and_then(|a| Ok((a, tail)))
                     }
@@ -217,37 +275,39 @@ fn get_json_token<'a>(state: &mut JsonTokenizerState, chunk: &'a [u8]) -> Result
             }
 
             JsonTokenizerState::InTrue(1) => {
-                match cursor.split_first() { Some((b'r', r)) => { *state = JsonTokenizerState::InTrue(2); cursor=r; } _ => { break reject(cursor); } }
+                match cursor.split_first() { Some((b'r', r)) => { *state = JsonTokenizerState::InTrue(2); cursor=r; } _ => { break reject_with(JE::InvalidNamedLiteral, cursor); } }
             }
             JsonTokenizerState::InTrue(2) => {
-                match cursor.split_first() { Some((b'u', r)) => { *state = JsonTokenizerState::InTrue(3); cursor=r; } _ => { break reject(cursor); } }
+                match cursor.split_first() { Some((b'u', r)) => { *state = JsonTokenizerState::InTrue(3); cursor=r; } _ => { break reject_with(JE::InvalidNamedLiteral, cursor); } }
             }
             JsonTokenizerState::InTrue(3) => {
-                match cursor.split_first() { Some((b'e', r)) => { *state = JsonTokenizerState::Value; break Ok((JsonToken::True,r)); } _ => { break reject(cursor); } }
+                match cursor.split_first() { Some((b'e', r)) => { *state = JsonTokenizerState::Value; break Ok((JsonToken::True,r)); } _ => { break reject_with(JE::InvalidNamedLiteral, cursor); } }
             }
             JsonTokenizerState::InNull(1) => {
-                match cursor.split_first() { Some((b'u', r)) => { *state = JsonTokenizerState::InNull(2); cursor=r; } _ => { break reject(cursor); } }
+                match cursor.split_first() { Some((b'u', r)) => { *state = JsonTokenizerState::InNull(2); cursor=r; } _ => { break reject_with(JE::InvalidNamedLiteral, cursor); } }
             }
             JsonTokenizerState::InNull(2) => {
-                match cursor.split_first() { Some((b'l', r)) => { *state = JsonTokenizerState::InNull(3); cursor=r; } _ => { break reject(cursor); } }
+                match cursor.split_first() { Some((b'l', r)) => { *state = JsonTokenizerState::InNull(3); cursor=r; } _ => { break reject_with(JE::InvalidNamedLiteral, cursor); } }
             }
             JsonTokenizerState::InNull(3) => {
-                match cursor.split_first() { Some((b'l', r)) => { *state = JsonTokenizerState::Value; break Ok((JsonToken::Null,r)); } _ => { break reject(cursor); } }
+                match cursor.split_first() { Some((b'l', r)) => { *state = JsonTokenizerState::Value; break Ok((JsonToken::Null,r)); } _ => { break reject_with(JE::InvalidNamedLiteral, cursor); } }
             }
             JsonTokenizerState::InFalse(1) => {
-                match cursor.split_first() { Some((b'a', r)) => { *state = JsonTokenizerState::InFalse(2); cursor=r; } _ => { break reject(cursor); } }
+                match cursor.split_first() { Some((b'a', r)) => { *state = JsonTokenizerState::InFalse(2); cursor=r; } _ => { break reject_with(JE::InvalidNamedLiteral, cursor); } }
             }
             JsonTokenizerState::InFalse(2) => {
-                match cursor.split_first() { Some((b'l', r)) => { *state = JsonTokenizerState::InFalse(3); cursor=r; } _ => { break reject(cursor); } }
+                match cursor.split_first() { Some((b'l', r)) => { *state = JsonTokenizerState::InFalse(3); cursor=r; } _ => { break reject_with(JE::InvalidNamedLiteral, cursor); } }
             }
             JsonTokenizerState::InFalse(3) => {
-                match cursor.split_first() { Some((b's', r)) => { *state = JsonTokenizerState::InFalse(4); cursor=r; } _ => { break reject(cursor); } }
+                match cursor.split_first() { Some((b's', r)) => { *state = JsonTokenizerState::InFalse(4); cursor=r; } _ => { break reject_with(JE::InvalidNamedLiteral, cursor); } }
             }
             JsonTokenizerState::InFalse(4) => {
-                match cursor.split_first() { Some((b'e', r)) => { *state = JsonTokenizerState::Value; break Ok((JsonToken::False,r)); } _ => { break reject(cursor); } }
+                match cursor.split_first() { Some((b'e', r)) => { *state = JsonTokenizerState::Value; break Ok((JsonToken::False,r)); } _ => { break reject_with(JE::InvalidNamedLiteral, cursor); } }
             }
             _ => {
-                break reject(cursor); // TODO: finish
+                // Probably unreachable, but here for invalid In* literal states the compiler can't
+                // prove nonexistent.
+                break reject_with(JE::InvalidNamedLiteral, cursor);
             }
         }
     }
@@ -332,7 +392,7 @@ impl JsonInterp<JsonAny> for DropInterp {
                 DropInterpStateEnum::AfterValue
             }
             (_, DropInterpStateEnum::InString, _) => {
-                return Err(Some(OOB::Reject)); // Broken invariant from lexer.
+                return CI; // Broken invariant from lexer.
             }
 
             // Numbers
@@ -346,7 +406,7 @@ impl JsonInterp<JsonAny> for DropInterp {
                 DropInterpStateEnum::AfterValue
             }
             (_, DropInterpStateEnum::InNumber, _) => {
-                return Err(Some(OOB::Reject)) // Broken invariant from lexer.
+                return CI; // Broken invariant from lexer.
             }
 
             // Named terms
@@ -362,7 +422,7 @@ impl JsonInterp<JsonAny> for DropInterp {
             }
             (Some(false), DropInterpStateEnum::Start, JsonToken::EndArray) => {
                 if *seen_item {
-                    return Err(Some(OOB::Reject)) // Trailing comma is not allowed in json.
+                    return rej_with(JE::TrailingCommaInJSONArray) // Trailing comma is not allowed in json.
                 } else {
                     stack.pop();
                     DropInterpStateEnum::AfterValue
@@ -385,7 +445,7 @@ impl JsonInterp<JsonAny> for DropInterp {
             }
             (Some(true), DropInterpStateEnum::ObjectNamePosition, JsonToken::EndObject) => {
                 if *seen_item {
-                    return Err(Some(OOB::Reject)) // Trailing comma is not allowed in json.
+                    return rej_with(JE::TrailingCommaInJSONObject) // Trailing comma is not allowed in json.
                 } else {
                     stack.pop();
                     DropInterpStateEnum::AfterValue
@@ -417,7 +477,7 @@ impl JsonInterp<JsonAny> for DropInterp {
                 DropInterpStateEnum::AfterValue
             }
 
-            _ => { return Err(Some(OOB::Reject)) } // Invalid json structure.
+            _ => { return rej_with(JE::InvalidJSON) } // Invalid json structure.
         };
         match (stack.is_empty(), state) {
             (true, DropInterpStateEnum::AfterValue) => { *destination=Some(()); Ok(()) }
@@ -440,7 +500,7 @@ impl<const N : usize> JsonInterp<JsonAny> for JsonStringAccumulate<N> {
             _ => {}
         }
         let mut extend_dest = |c: & [u8]| -> Result<(), Option<OOB>> {
-            destination.as_mut().ok_or(Some(OOB::Reject))?.try_extend_from_slice(c).map_err(|_| Some(OOB::Reject))?;
+            destination.as_mut().ok_or(CIE)?.try_extend_from_slice(c).map_err(|_| err_for(JE::StringBufferExceeded))?;
             Ok(())
         };
         let DropInterpJsonState { ref mut stack, ref mut state, ref mut seen_item } = full_state.0;
@@ -460,7 +520,7 @@ impl<const N : usize> JsonInterp<JsonAny> for JsonStringAccumulate<N> {
                 DropInterpStateEnum::AfterValue
             }
             (_, DropInterpStateEnum::InString, _) => {
-                return Err(Some(OOB::Reject)); // Broken invariant from lexer.
+                return CI; // Broken invariant from lexer.
             }
 
             // Numbers
@@ -475,7 +535,7 @@ impl<const N : usize> JsonInterp<JsonAny> for JsonStringAccumulate<N> {
                 DropInterpStateEnum::AfterValue
             }
             (_, DropInterpStateEnum::InNumber, _) => {
-                return Err(Some(OOB::Reject)) // Broken invariant from lexer.
+                return CI; // Broken invariant from lexer.
             }
 
             // Named terms
@@ -501,7 +561,7 @@ impl<const N : usize> JsonInterp<JsonAny> for JsonStringAccumulate<N> {
             }
             (Some(false), DropInterpStateEnum::Start, JsonToken::EndArray) => {
                 if *seen_item {
-                    return Err(Some(OOB::Reject)) // Trailing comma is not allowed in json.
+                    return rej_with(JE::TrailingCommaInJSONArray) // Trailing comma is not allowed in json.
                 } else {
                     stack.pop();
                     extend_dest(b"]")?;
@@ -528,7 +588,7 @@ impl<const N : usize> JsonInterp<JsonAny> for JsonStringAccumulate<N> {
             }
             (Some(true), DropInterpStateEnum::ObjectNamePosition, JsonToken::EndObject) => {
                 if *seen_item {
-                    return Err(Some(OOB::Reject)) // Trailing comma is not allowed in json.
+                    return rej_with(JE::TrailingCommaInJSONObject) // Trailing comma is not allowed in json.
                 } else {
                     stack.pop();
                     extend_dest(b"}")?;
@@ -568,7 +628,7 @@ impl<const N : usize> JsonInterp<JsonAny> for JsonStringAccumulate<N> {
                 DropInterpStateEnum::AfterValue
             }
 
-            _ => { return Err(Some(OOB::Reject)) } // Invalid json structure.
+            _ => { return rej_with(JE::InvalidJSON) } // Invalid json structure.
         };
         match (stack.is_empty(), state) {
             (true, DropInterpStateEnum::AfterValue) => { Ok(()) }
@@ -579,7 +639,7 @@ impl<const N : usize> JsonInterp<JsonAny> for JsonStringAccumulate<N> {
 
 use core::fmt::Debug;
 #[cfg(test)]
-fn test_json_interp<T: JsonInterp<A>, A>(p: &T, pairs: &[(JsonToken, Result<T::Returning, Option<OOB>>)]) where <T as JsonInterp<A>>::Returning: Debug + PartialEq + Clone {
+fn test_json_interp<T: JsonInterp<A>, A>(p: &T, pairs: &[(JsonToken, Result<T::Returning, Option<OOB>>)]) where <T as ParserCommon<A>>::Returning: Debug + PartialEq + Clone {
     let mut state = T::init(p);
     for (token, expected) in pairs {
         let mut destination = None;
@@ -590,7 +650,7 @@ fn test_json_interp<T: JsonInterp<A>, A>(p: &T, pairs: &[(JsonToken, Result<T::R
 }
 
 #[cfg(test)]
-fn test_json_interp_parser<T: InterpParser<A>, A>(p: &T, chunk: &[u8], expected: Result<(T::Returning, &[u8]), (Option<OOB>, &[u8])>) where <T as InterpParser<A>>::Returning: Debug + PartialEq + Clone {
+fn test_json_interp_parser<T: InterpParser<A>, A>(p: &T, chunk: &[u8], expected: Result<(T::Returning, &[u8]), (Option<OOB>, &[u8])>) where <T as ParserCommon<A>>::Returning: Debug + PartialEq + Clone {
     let mut state = T::init(p);
     let mut destination = None;
     let rv = T::parse(p, &mut state, chunk, &mut destination);
@@ -675,7 +735,7 @@ impl JsonInterp<JsonBool> for DropInterp {
     fn parse<'a>(&self, _state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         match token {
             JsonToken::True | JsonToken::False => { *destination=Some(()); Ok(()) }
-            _ => { Err(Some(OOB::Reject)) }
+            _ => { rej_with(JE::SchemaViolatedExpectedBoolean) }
         }
     }
 }
@@ -691,7 +751,7 @@ impl JsonInterp<JsonNull> for DropInterp {
     fn parse<'a>(&self, _state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         match token {
             JsonToken::Null => { *destination=Some(()); Ok(()) }
-            _ => { Err(Some(OOB::Reject)) }
+            _ => { rej_with(JE::SchemaViolatedExpectedNull) }
         }
     }
 }
@@ -719,10 +779,10 @@ impl JsonInterp<JsonString> for DropInterp {
                 DropInterpStateEnum::AfterValue
             }
             (_, DropInterpStateEnum::InString, _) => {
-                return Err(Some(OOB::Reject)); // Broken invariant from lexer.
+                return CI; // Broken invariant from lexer.
             }
 
-            _ => { return Err(Some(OOB::Reject)) } // Invalid json structure.
+            _ => { return rej_with(JE::SchemaViolatedExpectedString) }
         };
         match (stack.is_empty(), state) {
             (true, DropInterpStateEnum::AfterValue) => { *destination=Some(()); Ok(()) }
@@ -764,10 +824,10 @@ impl JsonInterp<JsonNumber> for DropInterp {
                 DropInterpStateEnum::AfterValue
             }
             (_, DropInterpStateEnum::InNumber, _) => {
-                return Err(Some(OOB::Reject)); // Broken invariant from lexer.
+                return CI; // Broken invariant from lexer.
             }
 
-            _ => { return Err(Some(OOB::Reject)) } // Invalid json structure.
+            _ => { return rej_with(JE::SchemaViolatedExpectedNumber); }
         };
         match (stack.is_empty(), state) {
             (true, DropInterpStateEnum::AfterValue) => { *destination = Some(()); Ok(()) }
@@ -807,7 +867,7 @@ impl<T> JsonInterp<JsonArray<T>> for DropInterp where DropInterp: JsonInterp<T> 
                 (Item(ref mut s, ref mut sub_destination), tok) => { <DropInterp as JsonInterp<T>>::parse(&DropInterp, s, tok, sub_destination)?; set_from_thunk(st.0, || AfterValue); }
                 (AfterValue, ValueSeparator) => { set_from_thunk(st.0, || Item(<DropInterp as ParserCommon<T>>::init(&DropInterp), None)) }
                 (AfterValue, EndArray) => { *destination=Some(()); return Ok(()) }
-                _ => { return Err(Some(OOB::Reject)) }
+                _ => { return rej_with(JE::SchemaViolatedExpectedArray); }
             };
             return Err(None)
         }
@@ -840,10 +900,10 @@ impl<A, B> JsonInterp<Alt<A, B>> for DropInterp
             (Ok(None), Err(None)) => Err(None),
             // Left-preference. This will complicate things a bit if we ever try to do host-side hinting.
             (Ok(Some(())), _) => { set_from_thunk(destination, || Some(())); Ok(()) }
-            (Err(Some(OOB::Reject)), Ok(Some(()))) | (Ok(None), Ok(Some(()))) => { set_from_thunk(destination, || Some(())); Ok(()) }
-            (Err(Some(OOB::Reject)), Err(None)) => { set_from_thunk(state1, || None); Err(None) }
-            (Err(None), Err(Some(OOB::Reject))) => { set_from_thunk(state2, || None); Err(None) }
-            _ => Err(Some(OOB::Reject)),
+            (Err(Some(_)), Ok(Some(()))) | (Ok(None), Ok(Some(()))) => { set_from_thunk(destination, || Some(())); Ok(()) }
+            (Err(Some(_)), Err(None)) => { set_from_thunk(state1, || None); Err(None) }
+            (Err(None), Err(Some(_))) => { set_from_thunk(state2, || None); Err(None) }
+            _ => rej_with(JE::AllAlternativesRejected),
         }
     }
 }
@@ -876,7 +936,7 @@ impl<T, S: JsonInterp<T>> JsonInterp<JsonArray<T>> for SubInterp<S> {
                 }
                 (AfterValue, ValueSeparator) => { set_from_thunk(st.0, || Item(<S as ParserCommon<T>>::init(&self.0), None)); }
                 (AfterValue, EndArray) => { return Ok(()) }
-                _ => { return Err(Some(OOB::Reject)) }
+                _ => { return rej_with(JE::SchemaViolatedExpectedArray); }
             };
             return Err(None)
         }
@@ -915,14 +975,12 @@ impl<T, S: JsonInterp<T>, RV: Debug + Summable<<S as ParserCommon<T>>::Returning
                     <S as JsonInterp<T>>::parse(&self.0, s, tok, sub_destination)?;
                     #[cfg(feature = "logging")]
                     trace!("destination {:?}", destination);
-                    destination.as_mut().ok_or(Some(OOB::Reject))?.add_and_set(sub_destination.as_ref().ok_or(Some(OOB::Reject))?);
+                    destination.as_mut().ok_or(CIE)?.add_and_set(sub_destination.as_ref().ok_or(CIE)?);
                     set_from_thunk(st.0, || AfterValue);
                 }
                 (AfterValue, ValueSeparator) => { set_from_thunk(st.0, || Item(<S as ParserCommon<T>>::init(&self.0), None)); }
                 (AfterValue, EndArray) => { return Ok(()) }
-                _ => {
-                    return Err(Some(OOB::Reject))
-                }
+                _ => { return rej_with(JE::SchemaViolatedExpectedArray); }
             };
             return Err(None)
         }
@@ -956,7 +1014,7 @@ impl<T, S: JsonInterp<T> + DynParser<T, Parameter = RV>, RV: Copy + Debug + Summ
                     set_from_thunk(st.0, || Item(<S as ParserCommon<T>>::init(&self.0), None));
                     match st.0 {
                         Item(ref mut s, ref mut sub_destination) => {
-                            <S as DynParser<T>>::init_param(&self.0,destination.ok_or(Some(OOB::Reject))?, s, sub_destination);
+                            <S as DynParser<T>>::init_param(&self.0,destination.ok_or(CIE)?, s, sub_destination);
                         }
                         _ => {}
                     }
@@ -966,22 +1024,20 @@ impl<T, S: JsonInterp<T> + DynParser<T, Parameter = RV>, RV: Copy + Debug + Summ
                     <S as JsonInterp<T>>::parse(&self.0, s, tok, sub_destination)?;
                     #[cfg(feature = "logging")]
                     trace!("destination {:?}", destination);
-                    destination.as_mut().ok_or(Some(OOB::Reject))?.add_and_set(sub_destination.as_ref().ok_or(Some(OOB::Reject))?);
+                    destination.as_mut().ok_or(CIE)?.add_and_set(sub_destination.as_ref().ok_or(CIE)?);
                     set_from_thunk(st.0, || AfterValue);
                 }
                 (AfterValue, ValueSeparator) => {
                     set_from_thunk(st.0, || Item(<S as ParserCommon<T>>::init(&self.0), None));
                     match st.0 {
                         Item(ref mut s, ref mut sub_destination) => {
-                            <S as DynParser<T>>::init_param(&self.0,destination.ok_or(Some(OOB::Reject))?, s, sub_destination);
+                            <S as DynParser<T>>::init_param(&self.0,destination.ok_or(CIE)?, s, sub_destination);
                         }
                         _ => {}
                     }
                 }
                 (AfterValue, EndArray) => { return Ok(()) }
-                _ => {
-                    return Err(Some(OOB::Reject))
-                }
+                _ => { return rej_with(JE::SchemaViolatedExpectedArray); }
             };
             return Err(None)
         }
@@ -1017,12 +1073,12 @@ impl<T, S: JsonInterp<T>, const N: usize> JsonInterp<JsonArray<T>> for Accumulat
                 }
                 Item(ref mut s, ref mut sub_destination) => {
                     <S as JsonInterp<T>>::parse(&self.0, s, token, sub_destination)?;
-                    destination.as_mut().ok_or(Some(OOB::Reject))?.try_push(sub_destination.as_ref().ok_or(Some(OOB::Reject))?.clone()).or(Err(Some(OOB::Reject)))?;
+                    destination.as_mut().ok_or(CIE)?.try_push(sub_destination.as_ref().ok_or(CIE)?.clone()).or(rej_with(JE::ArrayBufferExceeded))?;
                     set_from_thunk(state, || AfterValue);
                 }
                 AfterValue if token == ValueSeparator => { set_from_thunk(state, || Item(<S as ParserCommon<T>>::init(&self.0), None)); }
                 AfterValue if token == EndArray => { return Ok(()) }
-                _ => { return Err(Some(OOB::Reject)) }
+                _ => { return rej_with(JE::SchemaViolatedExpectedArray); }
             };
             return Err(None)
         }
@@ -1033,8 +1089,8 @@ impl<A, R, S : JsonInterp<A>> JsonInterp<A> for Action<S, fn(&<S as ParserCommon
     #[inline(never)]
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         self.0.parse(&mut state.0, token, &mut state.1)?;
-        match (self.1)(state.1.as_ref().ok_or(Some(OOB::Reject))?, destination) {
-            None => { Err(Some(OOB::Reject)) }
+        match (self.1)(state.1.as_ref().ok_or(CIE)?, destination) {
+            None => { rej_with(JE::SimpleActionRejected) }
             Some(()) => { Ok(()) }
         }
     }
@@ -1044,8 +1100,8 @@ impl<A, R, S : JsonInterp<A>, C> JsonInterp<A> for Action<S, fn(&<S as ParserCom
     #[inline(never)]
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         self.0.parse(&mut state.0, token, &mut state.1)?;
-        match (self.1)(state.1.as_ref().ok_or(Some(OOB::Reject))?, destination, core::mem::take(&mut state.2).ok_or(Some(OOB::Reject))?) {
-            None => { Err(Some(OOB::Reject)) }
+        match (self.1)(state.1.as_ref().ok_or(CIE)?, destination, core::mem::take(&mut state.2).ok_or(CIE)?) {
+            None => { rej_with(JE::SimpleActionRejected) }
             Some(()) => { Ok(()) }
         }
     }
@@ -1077,16 +1133,14 @@ impl<const N : usize> JsonInterp<JsonString> for JsonStringAccumulate<N> {
                 Err(None)
             }
             (JsonStringAccumulateState::Accumulating, JsonToken::StringChunk(c)) => {
-                destination.as_mut().ok_or(Some(OOB::Reject))?.try_extend_from_slice(c).map_err(|_| Some(OOB::Reject))?;
+                destination.as_mut().ok_or(CIE)?.try_extend_from_slice(c).map_err(|_| err_for(JE::StringBufferExceeded))?;
                 Err(None)
             }
             (state@JsonStringAccumulateState::Accumulating, JsonToken::EndString) => {
                 *state = JsonStringAccumulateState::End;
                 Ok(())
             }
-            _ => {
-                Err(Some(OOB::Reject))
-            }
+            _ => { rej_with(JE::SchemaViolatedExpectedString) }
         }
     }
 }
@@ -1106,16 +1160,14 @@ impl<const N : usize> JsonInterp<JsonNumber> for JsonStringAccumulate<N> {
                 Err(None)
             }
             (JsonStringAccumulateState::Accumulating, JsonToken::NumberChunk(c)) => {
-                destination.as_mut().ok_or(Some(OOB::Reject))?.try_extend_from_slice(c).map_err(|_| Some(OOB::Reject))?;
+                destination.as_mut().ok_or(CIE)?.try_extend_from_slice(c).map_err(|_| err_for(JE::NumberBufferExceeded))?;
                 Err(None)
             }
             (state@JsonStringAccumulateState::Accumulating, JsonToken::EndNumber) => {
                 *state = JsonStringAccumulateState::End;
                 Ok(())
             }
-            _ => {
-                Err(Some(OOB::Reject))
-            }
+            _ => { rej_with(JE::SchemaViolatedExpectedString) }
         }
     }
 }
@@ -1146,17 +1198,17 @@ impl<A, I: JsonInterp<A>> JsonInterp<Alt<A, JsonAny>> for OrDropAny<I> {
     fn parse<'a>(&self, (ref mut state1, ref mut state2): &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         let mut rv2 = None;
         match destination { None => set_from_thunk(destination, ||Some(None)), _ => (), }
-        match (state1.as_mut().map(|s| self.0.parse(s, token, destination.as_mut().ok_or(Some(OOB::Reject))?)).transpose()
+        match (state1.as_mut().map(|s| self.0.parse(s, token, destination.as_mut().ok_or(CIE)?)).transpose()
             , state2.as_mut().map(|s| <DropInterp as JsonInterp<JsonAny>>::parse(&DropInterp, s, token, &mut rv2)).transpose()) {
             (Err(None), Err(None)) => Err(None),
             (Err(None), Ok(None)) => Err(None),
             (Ok(None), Err(None)) => Err(None),
             // Left-preference. This will complicate things a bit if we ever try to do host-side hinting.
             (Ok(Some(())), _) => { Ok(()) } // set_from_thunk(destination, || core::mem::take(rv1).map(AltResult::First)); Ok(()) }
-            (Err(Some(OOB::Reject)), Ok(Some(()))) | (Ok(None), Ok(Some(()))) => { set_from_thunk(destination, || Some(None)); Ok(()) }
-            (Err(Some(OOB::Reject)), Err(None)) => { set_from_thunk(state1, || None); Err(None) }
-            (Err(None), Err(Some(OOB::Reject))) => { set_from_thunk(state2, || None); Err(None) }
-            _ => {set_from_thunk(destination, || None); Err(Some(OOB::Reject)) }
+            (Err(Some(_)), Ok(Some(()))) | (Ok(None), Ok(Some(()))) => { set_from_thunk(destination, || Some(None)); Ok(()) }
+            (Err(Some(_)), Err(None)) => { set_from_thunk(state1, || None); Err(None) }
+            (Err(None), Err(Some(_))) => { set_from_thunk(state2, || None); Err(None) }
+            _ => {set_from_thunk(destination, || None); rej_with(JE::AllAlternativesRejected) }
         }
     }
 }
@@ -1177,17 +1229,17 @@ impl<A, I: JsonInterp<A>> JsonInterp<A> for OrDrop<I> where DropInterp: JsonInte
     fn parse<'a>(&self, (ref mut state1, ref mut state2): &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         let mut rv2 = None;
         match destination { None => set_from_thunk(destination, ||Some(None)), _ => (), }
-        match (state1.as_mut().map(|s| self.0.parse(s, token, destination.as_mut().ok_or(Some(OOB::Reject))?)).transpose()
+        match (state1.as_mut().map(|s| self.0.parse(s, token, destination.as_mut().ok_or(CIE)?)).transpose()
             , state2.as_mut().map(|s| <DropInterp as JsonInterp<A>>::parse(&DropInterp, s, token, &mut rv2)).transpose()) {
             (Err(None), Err(None)) => Err(None),
             (Err(None), Ok(None)) => Err(None),
             (Ok(None), Err(None)) => Err(None),
             // Left-preference. This will complicate things a bit if we ever try to do host-side hinting.
             (Ok(Some(())), _) => { Ok(()) } // set_from_thunk(destination, || core::mem::take(rv1).map(AltResult::First)); Ok(()) }
-            (Err(Some(OOB::Reject)), Ok(Some(()))) | (Ok(None), Ok(Some(()))) => { set_from_thunk(destination, || Some(None)); Ok(()) }
-            (Err(Some(OOB::Reject)), Err(None)) => { set_from_thunk(state1, || None); Err(None) }
-            (Err(None), Err(Some(OOB::Reject))) => { set_from_thunk(state2, || None); Err(None) }
-            _ => {set_from_thunk(destination, || None); Err(Some(OOB::Reject)) }
+            (Err(Some(_)), Ok(Some(()))) | (Ok(None), Ok(Some(()))) => { set_from_thunk(destination, || Some(None)); Ok(()) }
+            (Err(Some(_)), Err(None)) => { set_from_thunk(state1, || None); Err(None) }
+            (Err(None), Err(Some(_))) => { set_from_thunk(state2, || None); Err(None) }
+            _ => {set_from_thunk(destination, || None); rej_with(JE::AllAlternativesRejected) }
         }
     }
 }
@@ -1220,10 +1272,10 @@ impl<A, B, I: JsonInterp<A>, J: JsonInterp<B>> JsonInterp<Alt<A, B>> for Alt<I, 
             (Ok(None), Err(None)) => Err(None),
             // Left-preference. This will complicate things a bit if we ever try to do host-side hinting.
             (Ok(Some(())), _) => { set_from_thunk(destination, || core::mem::take(rv1).map(AltResult::First)); Ok(()) }
-            (Err(Some(OOB::Reject)), Ok(Some(()))) | (Ok(None), Ok(Some(()))) => { set_from_thunk(destination, || core::mem::take(rv2).map(AltResult::Second)); Ok(()) }
-            (Err(Some(OOB::Reject)), Err(None)) => { set_from_thunk(state1, || None); Err(None) }
-            (Err(None), Err(Some(OOB::Reject))) => { set_from_thunk(state2, || None); Err(None) }
-            _ => Err(Some(OOB::Reject)),
+            (Err(Some(_)), Ok(Some(()))) | (Ok(None), Ok(Some(()))) => { set_from_thunk(destination, || core::mem::take(rv2).map(AltResult::Second)); Ok(()) }
+            (Err(Some(_)), Err(None)) => { set_from_thunk(state1, || None); Err(None) }
+            (Err(None), Err(Some(_))) => { set_from_thunk(state2, || None); Err(None) }
+            _ => rej_with(JE::AllAlternativesRejected),
         }
     }
 }
@@ -1270,6 +1322,9 @@ fn test_json_string_enum() {
 #[macro_export]
 macro_rules! define_json_struct_interp {
     { $name:ident $n:literal { $($field:ident : $schemaType:ty),* } } => {
+    define_json_struct_interp! { $name $n 0 { $($field : $schemaType),* } }
+                                                                         };
+    { $name:ident $n:literal $errs_idx:literal { $($field:ident : $schemaType:ty),* } } => {
         $crate::json::paste! {
 
             impl<$([<Field $field:camel>]: $crate::json_interp::Summable<[<Field $field:camel>]>),*> $crate::json_interp::Summable<Self> for $name<$([<Field $field:camel>]),*> {
@@ -1316,12 +1371,13 @@ macro_rules! define_json_struct_interp {
                             $crate::interp_parser::set_from_thunk(destination, || Some($name {$( [<field_ $field:snake>] : None ),* } ));
                             $crate::interp_parser::set_from_thunk(state, || [<$name State>]::Key(<JsonStringAccumulate<$n> as ParserCommon<JsonString>>::init(&JsonStringAccumulate), None));
                         }
+                        [<$name State>]::Start => { return $crate::json_interp::error_helpers::rej_with($crate::json_interp::JsonParserError::SchemaViolatedExpectedObject); }
                         [<$name State>]::Key(ref mut key_state, ref mut key_destination) => {
                             <JsonStringAccumulate<$n> as JsonInterp<JsonString>>::parse(&JsonStringAccumulate, key_state, token, key_destination)?;
                             // Note: if we can figure out how, making key_val into a local that
                             // reserves stack at less than the function scope will make this parse
                             // cheaper.
-                            let key_val = core::mem::take(key_destination).ok_or(Some($crate::interp_parser::OOB::Reject))?;
+                            let key_val = core::mem::take(key_destination).ok_or($crate::json_interp::error_helpers::CIE)?;
                             $crate::interp_parser::set_from_thunk(state, || [<$name State>]::KeySep(key_val));
                         }
 
@@ -1329,19 +1385,21 @@ macro_rules! define_json_struct_interp {
                             match &key[..] {
                                 $(
                                     $crate::json_interp::bstringify!($field) => {
+                                        #[cfg(feature = "logging")]
                                         trace!("json-struct-interp parser: checking key {:?}\n", core::str::from_utf8(key));
                                         $crate::interp_parser::set_from_thunk(state, || [<$name State>]::[<Field $field:camel>](<[<Field $field:camel Interp>] as ParserCommon<$schemaType>>::init(&self.[<field_ $field:snake>])));
                                     }
                                 )*
                                 ,
                                 _ => {
+                                    #[cfg(feature = "logging")]
                                     error!("json-struct-interp parser: Got unexpected key {:?}\n", core::str::from_utf8(key));
-                                    return Err(Some($crate::interp_parser::OOB::Reject)) }
+                                    return Err(Some($crate::interp_parser::OOB::RejectWithCode($crate::json_interp::error_helpers::json_parser_error_to_u16($crate::json_interp::JsonParserError::UnknownKeyForUnspecifiedSchema) + $errs_idx))) }
                             }
                         }
                         $(
                         [<$name State>]::[<Field $field:camel>](ref mut sub) => {
-                                let rv_temp=<[<Field $field:camel Interp>] as JsonInterp<$schemaType>>::parse(&self.[<field_ $field:snake>], sub, token, &mut destination.as_mut().ok_or(Some($crate::interp_parser::OOB::Reject))?.[<field_ $field:snake>]);//);
+                                let rv_temp=<[<Field $field:camel Interp>] as JsonInterp<$schemaType>>::parse(&self.[<field_ $field:snake>], sub, token, &mut destination.as_mut().ok_or($crate::json_interp::error_helpers::CIE)?.[<field_ $field:snake>]);//);
                                 rv_temp?;
                             $crate::interp_parser::set_from_thunk(state, || [<$name State>]::ValueSep);
                         })*
@@ -1353,7 +1411,7 @@ macro_rules! define_json_struct_interp {
                             $crate::interp_parser::set_from_thunk(state, || [<$name State>]::End);
                             return Ok(());
                         }
-                        _ => return Err(Some($crate::interp_parser::OOB::Reject)),
+                        _ => return $crate::json_interp::error_helpers::rej_with($crate::json_interp::JsonParserError::InvalidJSON),
                     };
                     match state {
                         [<$name State>]::End => Ok(()),
@@ -1435,7 +1493,7 @@ impl<A, S: JsonInterp<A>> JsonInterp<A> for Preaction<S> {
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         loop { break match state {
             None => {
-                (self.0)().ok_or(Some(OOB::Reject))?;
+                (self.0)().ok_or(err_for(JE::PreactionRejected))?;
                 set_from_thunk(state, || Some(<S as ParserCommon<A>>::init(&self.1)));
                 continue;
             }
@@ -1448,8 +1506,8 @@ impl<A, R, S : JsonInterp<A>> JsonInterp<A> for MoveAction<S, fn(<S as ParserCom
     #[inline(never)]
     fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
         self.0.parse(&mut state.0, token, &mut state.1)?;
-        match (self.1)(core::mem::take(&mut state.1).ok_or(Some(OOB::Reject))?, destination) {
-            None => { Err(Some(OOB::Reject)) }
+        match (self.1)(core::mem::take(&mut state.1).ok_or(CIE)?, destination) {
+            None => { rej_with(JE::SimpleMoveActionRejected) }
             Some(()) => { Ok(()) }
         }
     }
