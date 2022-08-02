@@ -21,7 +21,7 @@ bstringify = "0.1.2"
 enum-init = { git = "https://github.com/obsidiansystems/enum-init" }
 
 [dependencies.ledger-log]
-git = "https://github.com/ea-nasir/ledger-log"
+git = "https://github.com/Alamgu/ledger-log"
 features = ["log_trace"]
 optional = true
 
