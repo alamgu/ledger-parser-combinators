@@ -848,6 +848,31 @@ impl<A, B> JsonInterp<Alt<A, B>> for DropInterp
     }
 }
 
+// DropInterp with DynParser support
+pub struct DynDropInterp<P>(core::marker::PhantomData<P>);
+
+impl<P> DynDropInterp<P> {
+    pub const fn new() -> Self { DynDropInterp(core::marker::PhantomData) }
+}
+
+impl<T, P> ParserCommon<T> for DynDropInterp<P> where DropInterp: ParserCommon<T> {
+    type State = <DropInterp as ParserCommon<T>>::State;
+    type Returning = <DropInterp as ParserCommon<T>>::Returning;
+    fn init(&self) -> Self::State { <DropInterp as ParserCommon<T>>::init(&DropInterp) }
+}
+
+impl<T, P> DynParser<T> for DynDropInterp<P> where DropInterp: ParserCommon<T> {
+    type Parameter = P;
+    fn init_param(&self, _param: Self::Parameter, _state: &mut Self::State, _destination: &mut Option<Self::Returning>) { } // No-Op
+}
+
+impl<T, P> JsonInterp<T> for DynDropInterp<P> where DropInterp: JsonInterp<T> {
+    #[inline(never)]
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        <DropInterp as JsonInterp<T>>::parse(&DropInterp, state, token, destination)
+    }
+}
+
 /* Important: DROPS it's results */
 impl<T, S: ParserCommon<T>> ParserCommon<JsonArray<T>> for SubInterp<S> {
     type State = JsonArrayDropState<<S as ParserCommon<T>>::State, <S as ParserCommon<T>>::Returning>;
