@@ -1,8 +1,8 @@
 #![cfg_attr(target_os="nanos", no_std)]
 #![allow(incomplete_features)]
 #![feature(cfg_version)]
-#![cfg_attr(all(target_os="nanos", not(version("1.61"))), feature(bindings_after_at), feature(const_generics))]
-#![cfg_attr(all(target_os="nanos", version("1.61")), feature(adt_const_params))]
+#![cfg_attr(all(target_os="nanos", not(version("1.56"))), feature(bindings_after_at), feature(const_generics))]
+#![cfg_attr(all(target_os="nanos", version("1.56")), feature(adt_const_params))]
 
 #![cfg_attr(all(target_os="nanos", test), no_main)]
 #![cfg_attr(target_os="nanos", feature(custom_test_frameworks))]
