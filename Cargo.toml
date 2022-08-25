@@ -27,11 +27,11 @@ optional = true
 [features]
 "logging" = [ "ledger-log" ]
 
-[target.thumbv6m-none-eabi.dependencies.nanos_sdk]
+[target.'cfg(target_family = "bolos")'.dependencies.nanos_sdk]
 git = "https://github.com/LedgerHQ/ledger-nanos-sdk.git"
 features = [ "speculos" ]
 
-[target.thumbv6m-none-eabi.dev-dependencies]
+[target.'cfg(target_family = "bolos")'.dev-dependencies]
 testmacro = { git = "https://github.com/yhql/testmacro"}
 
 [patch."https://github.com/LedgerHQ/ledger-nanos-sdk.git".nanos_sdk]
