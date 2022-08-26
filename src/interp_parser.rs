@@ -891,12 +891,12 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> 
 #[cfg(test)]
 mod test {
 
-#[cfg(all(target_os="nanos", test))]
+#[cfg(all(target_family="bolos", test))]
     use testmacro::test_item as test;
-#[cfg(all(target_os="nanos", test))]
+#[cfg(all(target_family="bolos", test))]
 #[allow(unused_imports)]
     use nanos_sdk::{TestType, debug_print}; // , Pic};
-#[cfg(all(not(target_os="nanos"), test))]
+#[cfg(all(not(target_family="bolos"), test))]
     fn debug_print(_s: &str) {
     }
 

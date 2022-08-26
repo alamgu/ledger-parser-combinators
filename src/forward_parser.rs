@@ -220,11 +220,11 @@ impl<I : core_parsers::RV + ForwardParser, O: Clone, F: Fn(&I::R) -> (O, Option<
 #[cfg(test)]
 mod tests {
 
-#[cfg(all(target_os="nanos", test))]
+#[cfg(all(target_family="bolos", test))]
     use testmacro::test_item as test;
-#[cfg(all(target_os="nanos", test))]
+#[cfg(all(target_family="bolos", test))]
     use nanos_sdk::{TestType, debug_print};
-#[cfg(all(not(target_os="nanos"), test))]
+#[cfg(all(not(target_family="bolos"), test))]
     fn debug_print(s: &str) {
     }
 
