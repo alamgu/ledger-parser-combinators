@@ -10,9 +10,9 @@ use core::fmt::Write;
 #[cfg(feature = "logging")]
 use ledger_log::trace;
 
-#[cfg(all(target_os="nanos", test))]
+#[cfg(all(target_family="bolos", test))]
     use testmacro::test_item as test;
-#[cfg(all(target_os="nanos", test))]
+#[cfg(all(target_family="bolos", test))]
 #[allow(unused_imports)]
     use nanos_sdk::{TestType}; // , Pic};
 
@@ -1406,7 +1406,7 @@ mod tests {
         v.try_extend_from_slice(c).ok()?;
         Some(v)
     }
-#[cfg(all(target_os="nanos", test))]
+#[cfg(all(target_family="bolos", test))]
     use testmacro::test_item as test;
 
     #[test]
