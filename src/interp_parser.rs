@@ -804,7 +804,8 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> 
                 }
                 Failed(ref mut consumed, len) => {
                     if self.3 {
-                        write!(DBG, "We hit a failed state in the parser\n").or(Err(rej(cursor)))?;
+#[cfg(feature = "logging")]
+                        info!("We hit a failed state in the parser");
                         return Err((Some(OOB::Reject), cursor));
                     } else {
                         use core::cmp::min;
@@ -841,23 +842,6 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> 
         }
     }
 
-    pub struct DBG;
-    use core;
-    #[allow(unused_imports)]
-    use core::fmt::Write;
-    impl core::fmt::Write for DBG {
-        fn write_str(&mut self, s: &str) -> core::fmt::Result {
-            use arrayvec::ArrayString;
-            let mut qq = ArrayString::<128>::new();
-            qq.push_str(s);
-            #[cfg(target_os="nanos")]
-            nanos_sdk::debug_print(qq.as_str());
-            #[cfg(not(target_os="nanos"))]
-            std::print!("{}", qq.as_str());
-            Ok(())
-        }
-    }
-
 /*
 #[cfg(test)]
 mod test {
@@ -869,20 +853,6 @@ mod test {
     use nanos_sdk::{TestType, debug_print}; // , Pic};
 #[cfg(all(not(target_os="nanos"), test))]
     fn debug_print(_s: &str) {
-    }
-
-    struct DBG;
-    use core;
-    #[allow(unused_imports)]
-    use core::fmt::Write;
-    impl core::fmt::Write for DBG {
-        fn write_str(&mut self, s: &str) -> core::fmt::Result {
-            use arrayvec::ArrayString;
-            let mut qq = ArrayString::<128>::new();
-            qq.push_str(s);
-            debug_print(qq.as_str());
-            Ok(())
-        }
     }
 
     use core::fmt::Debug;
