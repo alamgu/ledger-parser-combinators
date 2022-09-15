@@ -4,3 +4,9 @@ members = [
   "proto-gen",
   "example"
 ]
+
+[patch.crates-io]
+nanos_sdk = { git = "https://github.com/alamgu/ledger-nanos-sdk", branch = "use-ambient-compiler-and-target" }
+ledger-log = { git = "https://github.com/alamgu/ledger-log", branch = "patchable" }
+nanos_ui = { git = "https://github.com/obsidiansystems/ledger-nanos-ui", branch = "patchable" }
+enum-init = { git = "https://github.com/alamgu/enum-init" }
