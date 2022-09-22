@@ -239,6 +239,10 @@ fn buff_ref_to_rust_ref(buff_ref: &str, reference_depth: usize) -> String {
         .split_last()
         .unwrap();
 
+    /*if end == "Any" {
+        return String::from("Any");
+    }*/
+
     return iter::repeat("super")
         .take(reference_depth)
         .map(String::from)
@@ -291,7 +295,9 @@ pub fn write_to_file_ensure_header(file_path: &Path, code: &[u8]) {
 
     if !file_exsists {
         file.write_all(br#"#[allow(unused_imports)]
-use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
+use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject,reject_on}, protobufs::{schema::*, async_parser::*}};
+#[allow(unused_imports)]
+use ledger_log::*;
 #[allow(unused_imports)]
 use core::future::Future;
 
