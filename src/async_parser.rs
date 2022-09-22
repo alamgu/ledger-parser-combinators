@@ -14,6 +14,7 @@ use crate::endianness::{Endianness, Convert};
 use core::future::Future;
 use core::convert::TryInto;
 use arrayvec::ArrayVec;
+use ledger_log::*;
 
 pub trait HasDefParser<BS: Readable> where DefaultInterp: HasOutput<Self> {
     fn def_parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c>;
@@ -31,7 +32,13 @@ impl<T, BS: Readable> HasDefParser<BS> for T where DefaultInterp: AsyncParser<T,
 
 /// Reject the parse.
 pub fn reject<T>() -> impl Future<Output = T> {
+    error!("Rejecting parse");
     // Do some out-of-band rejection thingie
+    core::future::pending()
+}
+
+pub fn reject_on<T>(file: &'static str, line: u32) -> impl Future<Output = T> {
+    error!("Rejecting, {}:{}", file, line);
     core::future::pending()
 }
 
@@ -42,6 +49,11 @@ pub trait Readable {
     /// read N bytes from this Readable; returns a future that will complete with a byte array of
     /// the result.
     fn read<'a: 'b, 'b, const N: usize>(&'a mut self) -> Self::OutFut<'b, N>;
+}
+
+pub trait UnwrappableReadable: Readable {
+    type Wrapped: Clone;
+    fn unwrap_clone(&self) -> Self::Wrapped;
 }
 
 pub trait HasOutput<Schema: ?Sized> {
