@@ -19,7 +19,7 @@ use arrayvec::ArrayVec;
 pub use crate::interp::*;
 
 #[cfg(feature = "logging")]
-use ledger_log::{trace,error};
+use ledger_log::{trace,error,info};
 
 
 /// Out-Of-Band messages; currently only Reject, but could plausibly be used to do prompts in a
