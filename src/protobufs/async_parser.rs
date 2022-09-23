@@ -127,6 +127,29 @@ impl<T, S: LengthDelimitedParser<T, BS>, R, BS: Readable, F: Fn(<S as HasOutput<
     }
 }
 
+struct Bind<S, F>(S, F);
+
+impl<T, S: HasOutput<T>, R, Fut: Future<Output = R>, F: Fn(<S as HasOutput<T>>::Output) -> Fut> HasOutput<T> for Bind<S, F> {
+    type Output = Fut::Output;
+}
+
+impl<T, S: LengthDelimitedParser<T, BS>, R, BS: Readable, Fut: Future<Output = R>, F: Fn(<S as HasOutput<T>>::Output) -> Fut> LengthDelimitedParser<T, BS> for Bind<S, F> {
+    type State<'c> = impl Future<Output = Self::Output>;
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
+        async move {
+            self.1(self.0.parse(input, length).await).await
+        }
+    }
+}
+impl<T, S: AsyncParser<T, BS>, R, BS: Readable, Fut: Future<Output = R>, F: Fn(<S as HasOutput<T>>::Output) -> Fut> AsyncParser<T, BS> for Bind<S, F> {
+    type State<'c> = impl Future<Output = Self::Output>;
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
+        async move {
+            self.1(self.0.parse(input).await).await
+        }
+    }
+}
+
 impl<Schema, BS: Readable> LengthDelimitedParser<Schema, BS> for DropInterp {
     type State<'c> = impl Future<Output = Self::Output>;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
@@ -161,7 +184,7 @@ async fn read_arrayvec_n<'a, const N: usize, BS: Readable>(input: &'a mut BS, mu
 impl<const N : usize, BS: Readable> LengthDelimitedParser<String, BS> for Buffer<N> {
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
         let f = read_arrayvec_n(input, length);
-        trace!("Buffering siz {}", core::mem::size_of_val(&f));
+        // trace!("Buffering siz {}", core::mem::size_of_val(&f));
         f
     }
     type State<'c> = impl Future<Output = Self::Output>;
@@ -350,7 +373,6 @@ macro_rules! define_message {
                 type State<'c> = impl Future<Output = Self::Output>;
             }
 
-            /*
             pub struct [<$name UnorderedInterp>]<$([<Field $field:camel>]),*> {
                 $(pub [<field_ $field:snake>] : [<Field $field:camel>] ),*
             }
@@ -360,14 +382,12 @@ macro_rules! define_message {
             }
 
 
-            impl<BS: 'static + Clone + Readable,$([<Field $field:camel Interp>] : HasOutput<$schemaType> + $parseTrait<$schemaType, BS>),*> LengthDelimitedParser<[<$name:camel>], BS> for [<$name:camel UnorderedInterp>]<$([<Field $field:camel Interp>]),*> {
+            impl<BS: 'static + Clone + Readable,$([<Field $field:camel Interp>] : HasOutput<$schemaType> + $parseTrait<$schemaType, TrackLength<BS> >),*> LengthDelimitedParser<[<$name:camel>], BS> for [<$name:camel UnorderedInterp>]<$([<Field $field:camel Interp>]),*> {
                 fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
-                    let rv = async move {
-                        let mut tl = TrackLength(input, 0); // input.clone();
-                        $(
+                    async move {
+                        let mut tl = TrackLength(input.clone(), 0); // input.clone();
                             {
                             // let mut seen = false;
-                            trace!("Seek and Parse for field {}", stringify!($field));
                             loop {
                                 let tag : u32 = parse_varint(&mut tl).await;
                                 let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject_on(core::file!(),core::line!()).await, };
@@ -379,7 +399,7 @@ macro_rules! define_message {
                                         return reject_on(core::file!(),core::line!()).await;
                                     }
                                     trace!("Calling subparser {}", stringify!($field));
-                                    define_message! { @call_parser_for, $parseTrait, ii, self.[<field_ $field:snake>] }
+                                    define_message! { @call_parser_for, $parseTrait, tl, self.[<field_ $field:snake>] }
                                     trace!("Subparser done");
                                     /*if(seen && ! $repeated) {
                                         // Rejecting because of multiple fields on non-repeating;
@@ -389,7 +409,9 @@ macro_rules! define_message {
                                         return reject_on(core::file!(),core::line!()).await;
                                     }
                                     seen = true;*/
-                                    })*
+                                    }
+                                    )*
+                                        _ => return reject_on(core::file!(), core::line!()).await,
                                 }
                                 if tl.1 == length {
                                     break;
@@ -400,18 +422,11 @@ macro_rules! define_message {
                                 }
                             }
                             }
-                        )*
                         ()
-                    };
-                    trace!("Future size for {}: {}", stringify!($name), core::mem::size_of_val(&rv));
-                    rv
+                    }
                 }
                 type State<'c> = impl Future<Output = Self::Output>;
             }
-        */
-
-
-
         }
     };
     { @call_parser_for, AsyncParser, $tl:ident, $($p:tt)* } => {
