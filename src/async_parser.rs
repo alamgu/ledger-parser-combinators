@@ -51,6 +51,27 @@ pub trait Readable {
     fn read<'a: 'b, 'b, const N: usize>(&'a mut self) -> Self::OutFut<'b, N>;
 }
 
+pub trait ReadableLength {
+    fn index(&self) -> usize;
+}
+
+#[derive(Clone)]
+pub struct LengthTrack<R: Readable>(pub R, pub usize);
+
+impl<BS: 'static + Readable> Readable for LengthTrack<BS> {
+    type OutFut<'a, const N: usize> = impl Future<Output = [u8; N]>;
+    fn read<'a: 'b, 'b, const N: usize>(&'a mut self) -> Self::OutFut<'b, N> {
+        self.1 += N;
+        self.0.read()
+    }
+}
+
+impl<R: Readable> ReadableLength for LengthTrack<R> {
+    fn index(&self) -> usize {
+        self.1
+    }
+}
+
 pub trait UnwrappableReadable: Readable {
     type Wrapped: Clone;
     fn unwrap_clone(&self) -> Self::Wrapped;
