@@ -36,7 +36,7 @@ pub fn parse_varint<'a: 'c, 'c, T, BS: Readable>(input: &'a mut BS) -> impl Futu
     }
 }
 
-fn skip_varint<'a: 'c, 'c, BS: Readable>(input: &'a mut BS) -> impl Future<Output = ()> + 'c where
+pub fn skip_varint<'a: 'c, 'c, BS: Readable>(input: &'a mut BS) -> impl Future<Output = ()> + 'c where
 {
     async move {
         loop {
@@ -287,6 +287,31 @@ macro_rules! define_message {
 
             pub struct [<$name:camel>];
 
+            /*
+            impl<BS: 'static + Readable> LengthDelimitedParser<[<$name:camel>], BS> for $crate::interp::DropInterp {
+                fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
+                    skip_input(input, length);
+                }
+                type State<'c> = impl Future<Output = Self::Output>;
+            }
+            */
+
+            pub const [<$name:snake:upper _ALL_DROP>] : [<$name UnorderedInterp>]<$(define_message!{ @dropify, $field }),*> = [<$name UnorderedInterp>] {
+                $([<field_ $field:snake>]: $crate::interp::DropInterp),*
+            };
+
+
+            /*
+            impl [<$name:camel>] {
+                $(const fn [<parse_field_$field>]<BS: 'static + Readable + $crate::async_parser::ReadableLength + Clone, S: $parseTrait<$schemaType, BS>>(s: &S) -> impl LengthDelimitedParser<[<$name:camel>], BS> {
+                    [<$name UnorderedInterp>] {
+                        // [<field_ $field:snake>]: s,
+                        ..[<$name:upper:snake _ALL_DROP>]
+                    }
+                })*
+            }
+            */
+
             impl<$([<Field $field:camel Interp>] : HasOutput<$schemaType>),*> HasOutput<[<$name:camel>]> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
                 type Output = ();
             }
@@ -295,42 +320,38 @@ macro_rules! define_message {
                 const FORMAT: ProtobufWire = ProtobufWire::LengthDelimited;
             }
 
-            impl<BS: 'static + Clone + Readable,$([<Field $field:camel Interp>] : HasOutput<$schemaType> + $parseTrait<$schemaType, BS>),*> LengthDelimitedParser<[<$name:camel>], BS> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
+            impl<BS: 'static + Clone + Readable + $crate::async_parser::ReadableLength,$([<Field $field:camel Interp>] : HasOutput<$schemaType> + $parseTrait<$schemaType, BS>),*> LengthDelimitedParser<[<$name:camel>], BS> for [<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> {
                 fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
                     let rv = async move {
-                        let field_count;
+                        let start_index = input.index();
                         {
                         // First, structural check:
-                        let mut field_counter = 0;
-                        let mut tl = TrackLength(input.clone(), 0);
+                        let mut ii = input.clone();
                         info!("{} structural check", stringify!($name));
-                        info!("tl size: {}", core::mem::size_of_val(&tl));
+                        info!("ii size: {}", core::mem::size_of_val(&ii));
                         loop {
                             info!("{} structural field", stringify!($name));
                             // Probably should check for presence of all expected fields here as
                             // well. On the other hand, fields that we specify an interpretation
                             // for are _required_.
-                            let tag : u32 = parse_varint(&mut tl).await;
+                            let tag : u32 = parse_varint(&mut ii).await;
                             info!("Field tag: {:X}", tag);
                             let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => {error!("Wrong wire type {:X}", tag); reject_on(core::file!(),core::line!()).await} };
                             info!("Field type: {:?}", wire);
-                            skip_field(wire, &mut tl).await;
-                            field_counter += 1;
-                            if tl.1 == length {
+                            skip_field(wire, &mut ii).await;
+                            if ii.index()-start_index == length {
                                 break;
                             }
-                            if tl.1 > length {
+                            if ii.index()-start_index > length {
                                 error!("Length too long");
                                 return reject_on(core::file!(),core::line!()).await;
                             }
                         }
-                        field_count = field_counter;
                         trace!("Structural done for {}, parsing fields", stringify!($name));
                         }
                         $(
                             {
                             let mut ii = input.clone();
-                            let mut i = 0;
                             let mut seen = false;
                             trace!("Seek and Parse for field {}", stringify!($field));
                             loop {
@@ -343,7 +364,7 @@ macro_rules! define_message {
                                         return reject_on(core::file!(),core::line!()).await;
                                     }
                                     trace!("Calling subparser {}", stringify!($field));
-                                    define_message! { @call_parser_for, $parseTrait, ii, self.[<field_ $field:snake>] }
+                                    define_message! { @call_parser_for, $parseTrait, (&mut ii), self.[<field_ $field:snake>] };
                                     trace!("Subparser done");
                                     if(seen && ! $repeated) {
                                         // Rejecting because of multiple fields on non-repeating;
@@ -357,9 +378,12 @@ macro_rules! define_message {
                                     skip_field(wire, &mut ii).await;
                                     // Skip it
                                 }
-                                i+=1;
-                                if i >= field_count {
+                                if ii.index()-start_index == length {
                                     break;
+                                }
+                                if ii.index()-start_index > length {
+                                    error!("Length too long");
+                                    return reject_on(core::file!(),core::line!()).await;
                                 }
                             }
                             }
@@ -377,19 +401,24 @@ macro_rules! define_message {
                 $(pub [<field_ $field:snake>] : [<Field $field:camel>] ),*
             }
 
-            impl<$([<Field $field:camel Interp>] : HasOutput<$schemaType>),*> HasOutput<[<$name:camel>]> for [<$name:camel UnorderedInterp>]<$([<Field $field:camel Interp>]),*> {
-                type Output = ();
+            #[derive(Default)]
+            pub struct [<$name:camel Value>]<$([<$field:camel OutputType>]),*> {
+                $(pub [<field_ $field:snake>]: [<$field:camel OutputType>]),*
             }
 
+            impl<$([<Field $field:camel Interp>] : HasOutput<$schemaType>),*> HasOutput<[<$name:camel>]> for [<$name:camel UnorderedInterp>]<$([<Field $field:camel Interp>]),*> {
+                type Output = [<$name:camel Value>]< $(Option<[<Field $field:camel Interp>]::Output>),* >;
+            }
 
-            impl<BS: 'static + Clone + Readable,$([<Field $field:camel Interp>] : HasOutput<$schemaType> + $parseTrait<$schemaType, TrackLength<BS> >),*> LengthDelimitedParser<[<$name:camel>], BS> for [<$name:camel UnorderedInterp>]<$([<Field $field:camel Interp>]),*> {
+            impl<BS: 'static + Clone + Readable + $crate::async_parser::ReadableLength, $([<Field $field:camel Interp>] : HasOutput<$schemaType> + $parseTrait<$schemaType, BS >),*> LengthDelimitedParser<[<$name:camel>], BS> for [<$name:camel UnorderedInterp>]<$([<Field $field:camel Interp>]),*> {
                 fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
                     async move {
-                        let mut tl = TrackLength(input.clone(), 0); // input.clone();
+                        let mut result = [<$name:camel Value>]::default();
+                        let start = input.index();
                             {
                             // let mut seen = false;
                             loop {
-                                let tag : u32 = parse_varint(&mut tl).await;
+                                let tag : u32 = parse_varint(input).await;
                                 let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject_on(core::file!(),core::line!()).await, };
                                 trace!("Next field, tag: {} wire: {:?}", tag >> 3, wire);
                                 match tag >> 3 {
@@ -399,7 +428,7 @@ macro_rules! define_message {
                                         return reject_on(core::file!(),core::line!()).await;
                                     }
                                     trace!("Calling subparser {}", stringify!($field));
-                                    define_message! { @call_parser_for, $parseTrait, tl, self.[<field_ $field:snake>] }
+                                    result.[<field_ $field:snake>] = Some(define_message! { @call_parser_for, $parseTrait, (input), self.[<field_ $field:snake>] });
                                     trace!("Subparser done");
                                     /*if(seen && ! $repeated) {
                                         // Rejecting because of multiple fields on non-repeating;
@@ -413,28 +442,30 @@ macro_rules! define_message {
                                     )*
                                         _ => return reject_on(core::file!(), core::line!()).await,
                                 }
-                                if tl.1 == length {
+                                if input.index()-start == length {
                                     break;
                                 }
-                                if tl.1 > length {
+                                if input.index()-start > length {
                                     error!("Length too long");
                                     return reject_on(core::file!(),core::line!()).await;
                                 }
                             }
                             }
-                        ()
+                        result
                     }
                 }
                 type State<'c> = impl Future<Output = Self::Output>;
             }
         }
     };
-    { @call_parser_for, AsyncParser, $tl:ident, $($p:tt)* } => {
-                                                                   $($p)*.parse(&mut $tl).await;
+    { @dropify, $($p:tt)* } => { $crate::interp::DropInterp };
+    { @call_parser_for, AsyncParser, ($($ii:tt)*), $($p:tt)* } => {
+                                                                   $($p)*.parse($($ii)*).await
     };
-    { @call_parser_for, LengthDelimitedParser, $tl:ident, $($p:tt)* } => { {
-       let length : usize = parse_varint(&mut $tl).await;
-       $($p)*.parse(&mut $tl, length).await;
+    { @call_parser_for, LengthDelimitedParser, ($($ii:tt)*), $($p:tt)* } => { {
+                                                                                  { let length : usize = parse_varint($($ii)*).await;
+                                                                                      $($p)*.parse($($ii)*, length).await
+                                                                                  }
     } };
 }
 
@@ -451,6 +482,15 @@ macro_rules! define_enum {
 
             impl HasOutput<$name> for DefaultInterp {
                 type Output = $name;
+            }
+
+            impl<BS: Readable> AsyncParser<$name, BS> for $crate::interp::DropInterp {
+                fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
+                    async move {
+                        $crate::protobufs::async_parser::skip_varint(input).await;
+                    }
+                }
+                type State<'c> = impl Future<Output = Self::Output>;
             }
 
             impl ProtobufWireFormat for [<$name:camel>] {
@@ -527,19 +567,18 @@ macro_rules! any_of {
             type Output = O;
         }
 
-        impl<BS: 'static + Clone + Readable, O, $([< $variant:camel Interp >]: LengthDelimitedParser<$schema, BS> + HasOutput<$schema, Output = O>),*> LengthDelimitedParser<Any, BS> for $name<$([< $variant:camel Interp >]),*> {
+        impl<BS: 'static + Clone + Readable + $crate::async_parser::ReadableLength, O, $([< $variant:camel Interp >]: LengthDelimitedParser<$schema, BS> + HasOutput<$schema, Output = O>),*> LengthDelimitedParser<Any, BS> for $name<$([< $variant:camel Interp >]),*> {
             type State<'c> = impl Future<Output = Self::Output>;
             fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
                 async move {
+                    let start = input.index();
                     let mut discriminator = None;
-                    let n;
                     let mut rv: Option<O> = None;
                     trace!("Starting any-of");
                     {
-                        let mut tl = TrackLength(input.clone(), 0);
-                        let mut n_m = 0;
+                        let mut ii = input.clone();
                         loop {
-                            let tag : u32 = parse_varint(&mut tl).await;
+                            let tag : u32 = parse_varint(&mut ii).await;
                             let wire = match $crate::protobufs::schema::ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => {trace!("Invalid Protobuf Wire Format"); reject_on(core::file!(),core::line!()).await} };
                             if tag >> 3 == 1 {
                                 if wire != $crate::protobufs::schema::ProtobufWire::LengthDelimited {
@@ -550,10 +589,10 @@ macro_rules! any_of {
                                     trace!("No support for multiple URLs in any messages");
                                     return reject_on(core::file!(),core::line!()).await;
                                 }
-                                let length : usize = parse_varint(&mut tl).await;
+                                let length : usize = parse_varint(&mut ii).await;
                                 let mut discrim_parse = [<$name Discriminator>]::start();
                                 for _ in 0..length {
-                                    let [c] = tl.read().await;
+                                    let [c] = ii.read().await;
                                     match discrim_parse.step(c) {
                                         Some(r) => {
                                             discrim_parse = r;
@@ -564,19 +603,17 @@ macro_rules! any_of {
                                 discriminator = discrim_parse.get_val();
                                 trace!("Got a discriminator");
                             } else {
-                                skip_field(wire, &mut tl).await;
+                                skip_field(wire, &mut ii).await;
                                 // Skip it
                             }
-                            n_m+=1;
-                            if tl.1 == length {
+                            if ii.index()-start == length {
                                 break;
                             }
-                            if tl.1 >= length {
+                            if ii.index()-start >= length {
                                 trace!("Bad length");
                                 return reject_on(core::file!(),core::line!()).await;
                             }
                         }
-                        n = n_m;
                     }
 
                     match discriminator {
@@ -584,17 +621,15 @@ macro_rules! any_of {
                         $(
                             Some([<$name Discriminator>]::$variant) => {
                                 trace!("Parsing value for discriminator {:?}", discriminator);
-                                let mut tl = input.clone();
-                                let mut i = 0;
                                 loop {
-                                    let tag : u32 = parse_varint(&mut tl).await;
+                                    let tag : u32 = parse_varint(input).await;
                                     let wire = match $crate::protobufs::schema::ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject_on(core::file!(),core::line!()).await, };
                                     if tag >> 3 == 2 {
                                         if wire != [<$schema:camel>]::FORMAT {
                                             error!("Incorrect format for any payload");
                                             return reject_on(core::file!(),core::line!()).await;
                                         }
-                                        let length : usize = parse_varint(&mut tl).await;
+                                        let length : usize = parse_varint(input).await;
                                         if(rv.is_some()) {
                                             error!("Only one value allowed in Any");
                                             // Rejecting because of multiple fields on non-repeating;
@@ -603,25 +638,24 @@ macro_rules! any_of {
                                             return reject_on(core::file!(),core::line!()).await;
                                         }
                                         trace!("Parsing actual value");
-                                        rv = Some(self.[<$variant:snake>].parse(&mut tl, length).await);
+                                        rv = Some(self.[<$variant:snake>].parse(input, length).await);
                                         trace!("Parsed");
                                     } else {
-                                        skip_field(wire, &mut tl).await;
+                                        skip_field(wire, input).await;
                                         // Skip it
                                     }
-                                    i += 1;
-                                    if i >= n {
+                                    if input.index()-start == length {
                                         break;
+                                    }
+                                    if input.index()-start >= length {
+                                        trace!("Bad length");
+                                        return reject_on(core::file!(),core::line!()).await;
                                     }
                                 }
                             }
                         )*
 
                     }
-
-                    skip_input(input, length).await;
-
-                    // trace!("any handler done, rv: {:?}", rv);
 
                     match rv {
                         Some(r) => { trace!("Good value"); r },
