@@ -20,14 +20,14 @@ pub trait HasDefParser<BS: Readable> where DefaultInterp: HasOutput<Self> {
     fn def_parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c>;
 
     /// Type synonym for the future returned by this parser.
-    type State<'c>: Future<Output = <DefaultInterp as HasOutput<Self>>::Output>;
+    type State<'c>: Future<Output = <DefaultInterp as HasOutput<Self>>::Output> where BS: 'c, Self: 'c;
 }
 
 impl<T, BS: Readable> HasDefParser<BS> for T where DefaultInterp: AsyncParser<T, BS> {
     fn def_parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         <DefaultInterp as AsyncParser<T, BS>>::parse(&DefaultInterp, input)
     }
-    type State<'c> = impl Future<Output = <DefaultInterp as HasOutput<Self>>::Output>;
+    type State<'c> = impl Future<Output = <DefaultInterp as HasOutput<Self>>::Output> where BS: 'c, T: 'c;
 }
 
 /// Reject the parse.
@@ -37,6 +37,7 @@ pub fn reject<T>() -> impl Future<Output = T> {
     core::future::pending()
 }
 
+#[allow(unused_variables)]
 pub fn reject_on<T>(file: &'static str, line: u32) -> impl Future<Output = T> {
     error!("Rejecting, {}:{}", file, line);
     core::future::pending()
@@ -45,7 +46,7 @@ pub fn reject_on<T>(file: &'static str, line: u32) -> impl Future<Output = T> {
 /// Readable defines an interface for input to a parser.
 pub trait Readable {
     /// Type alias for the future type of read
-    type OutFut<'a, const N: usize> : 'a + Future<Output = [u8; N]>;
+    type OutFut<'a, const N: usize> : 'a + Future<Output = [u8; N]> where Self: 'a;
     /// read N bytes from this Readable; returns a future that will complete with a byte array of
     /// the result.
     fn read<'a: 'b, 'b, const N: usize>(&'a mut self) -> Self::OutFut<'b, N>;
@@ -89,7 +90,7 @@ pub trait AsyncParser<Schema, BS: Readable> : HasOutput<Schema> {
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c>;
 
     /// Type synonym for the future returned by this parser.
-    type State<'c>: Future<Output = Self::Output>;
+    type State<'c>: Future<Output = Self::Output> where BS: 'c, Self: 'c;
 
 }
 
@@ -98,7 +99,7 @@ impl<T, S: HasOutput<T>, const N: usize> HasOutput<Array<T, N>> for SubInterp<S>
 }
 
 impl<S, T, BS: Readable, const N: usize> AsyncParser<Array<T, N>, BS> for SubInterp<S> where T : DefaultArray, S: AsyncParser<T, BS> {
-    type State<'c> = impl Future<Output = [<S as HasOutput<T>>::Output; N]>;
+    type State<'c> = impl Future<Output = [<S as HasOutput<T>>::Output; N]> where BS: 'c, S: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
             let mut accumulator = ArrayVec::<<S as HasOutput<T>>::Output, N>::new();
@@ -118,7 +119,7 @@ impl HasOutput<Byte> for DefaultInterp {
 }
 
 impl<BS: Readable> AsyncParser<Byte, BS> for DefaultInterp {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
             let [u] = input.read().await;
@@ -145,7 +146,7 @@ impl<const N: usize> HasOutput<Array<Byte, N>> for DefaultInterp {
 /// Overlap is not permitted, but this doesn't overlap because we've disabled the default
 /// implementation.
 impl <const N: usize, BS: Readable> AsyncParser<Array<Byte, N>, BS> for DefaultInterp {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
             input.read().await
@@ -159,7 +160,7 @@ macro_rules! number_parser {
             type Output = $t;
         }
         impl<const E: Endianness, BS: Readable> AsyncParser<$p<E>, BS> for DefaultInterp where $t : Convert<E> {
-            type State<'c> = impl Future<Output = Self::Output>;
+            type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
             fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
                 async move {
                     Convert::<E>::deserialize(input.read::<$size>().await)
@@ -177,7 +178,7 @@ impl<T, const N: usize> HasOutput<Array<T, N>> for DefaultInterp where T : Defau
 }
 
 impl<T, const N: usize, BS: Readable> AsyncParser<Array<T, N>, BS> for DefaultInterp where T : DefaultArray, DefaultInterp: AsyncParser<T, BS> {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         <SubInterp<DefaultInterp> as AsyncParser<Array<T, N>, BS>>::parse(&SubInterp(DefaultInterp), input)
     }
@@ -188,7 +189,7 @@ impl<N, I, S: HasOutput<I>, const M: usize> HasOutput<DArray<N, I, M>> for SubIn
 }
 
 impl<S, N, I, const M: usize, BS: Readable> AsyncParser<DArray<N, I, M>, BS> for SubInterp<S> where S: AsyncParser<I, BS>, DefaultInterp: AsyncParser<N, BS>, <DefaultInterp as HasOutput<N>>::Output: TryInto<usize> {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c, S: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
             let length : usize = match DefaultInterp.parse(input).await.try_into() {
@@ -210,7 +211,7 @@ impl<Schema> HasOutput<Schema> for DropInterp {
 
 impl<N, I, const M: usize, BS: Readable> AsyncParser<DArray<N, I, M>, BS> for DropInterp where DefaultInterp: AsyncParser<I, BS>, DefaultInterp: AsyncParser<N, BS>, <DefaultInterp as HasOutput<N>>::Output: TryInto<usize>
 , DefaultInterp: AsyncParser<I, BS> {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
             let length : usize = match <DefaultInterp as AsyncParser<N, BS>>::parse(&DefaultInterp, input).await.try_into() {
@@ -229,7 +230,7 @@ impl<T, S: HasOutput<T>, R, F: Fn(<S as HasOutput<T>>::Output) -> Option<R>> Has
 }
 
 impl<T, S: AsyncParser<T, BS>, R, F: Fn(<S as HasOutput<T>>::Output) -> Option<R>, BS: Readable> AsyncParser<T, BS> for Action<S, F> {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c, F: 'c, S: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
             match self.1(self.0.parse(input).await) {
@@ -245,7 +246,7 @@ impl<A, R, S, SR> HasOutput<A> for Action<S, fn(&SR, &mut Option<R>) -> Option<(
 }
 
 impl<A, R, S : AsyncParser<A, BS>, BS: Readable> AsyncParser<A, BS> for Action<S, fn(&<S as HasOutput<A>>::Output, &mut Option<R>) -> Option<()>> {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c, R: 'c, <S as HasOutput<A>>::Output: 'c, S: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
             let mut destination = None;
@@ -268,7 +269,7 @@ impl<T, S: HasOutput<T>, R> HasOutput<T> for FAction<S, S::Output, R> {
 }
 
 impl<T, S: AsyncParser<T, BS>, R, BS: Readable> AsyncParser<T, BS> for FAction<S, <S as HasOutput<T>>::Output, R> { // FAction<S, fn(<S as HasOutput<T>>::Output) -> Option<R>> {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c, R: 'c, <S as HasOutput<T>>::Output: 'c, S: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
             match self.1(self.0.parse(input).await) {
@@ -297,7 +298,7 @@ impl<BS: 'static + Readable, X: 'static> Readable for HashIntercept<BS, X> {
 
 /// ObserveBytes for AsyncParser operates by passing a HashIntercept to the sub-parser.
 impl<X: 'static, F, S: AsyncParser<A, HashIntercept<BS, X>>, A, BS: 'static + Readable + Clone> AsyncParser<A, BS> for ObserveBytes<X, F, S> {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where S: 'c, F: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
             let mut hi = HashIntercept(input.clone(), (self.0)());
@@ -314,7 +315,7 @@ impl<A, B, S: HasOutput<A>, T: HasOutput<B>> HasOutput<(A, B)> for (S, T) {
 
 /// Pairs of parsers parse the sequence of their two schemas.
 impl<A, B, S: AsyncParser<A, BS>, T: AsyncParser<B, BS>, BS: Readable> AsyncParser<(A, B), BS> for (S, T) {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c, T: 'c, S: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
             let t = self.0.parse(input).await;

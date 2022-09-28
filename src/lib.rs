@@ -1,21 +1,23 @@
-#![cfg_attr(target_os="nanos", no_std)]
+#![cfg_attr(target_family="bolos", no_std)]
 #![allow(incomplete_features)]
-#![feature(bindings_after_at)]
-#![feature(const_generics)]
-#![feature(const_evaluatable_checked)]
-#![feature(const_fn_trait_bound)]
-#![feature(min_type_alias_impl_trait)]
+
 #![feature(min_specialization)]
 #![feature(generic_associated_types)]
 #![feature(auto_traits)]
 #![feature(negative_impls)]
-#![feature(member_constraints)]
 #![feature(trace_macros)]
 #![feature(log_syntax)]
-#![cfg_attr(all(target_os="nanos", test), no_main)]
-#![cfg_attr(target_os="nanos", feature(custom_test_frameworks))]
+#![feature(type_alias_impl_trait)]
+#![feature(generic_const_exprs)]
+
+#![feature(cfg_version)]
+#![cfg_attr(all(target_family="bolos", not(version("1.56"))), feature(bindings_after_at), feature(const_generics))]
+#![cfg_attr(all(target_family="bolos", version("1.56")), feature(adt_const_params))]
+
+#![cfg_attr(all(target_family="bolos", test), no_main)]
+#![cfg_attr(target_family="bolos", feature(custom_test_frameworks))]
 #![reexport_test_harness_main = "test_main"]
-#![cfg_attr(target_os="nanos", test_runner(nanos_sdk::sdk_test_runner))]
+#![cfg_attr(target_family="bolos", test_runner(nanos_sdk::sdk_test_runner))]
 
 #[macro_use]
 extern crate enum_init;
