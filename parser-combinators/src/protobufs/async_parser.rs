@@ -8,10 +8,6 @@ use arrayvec::ArrayVec;
 pub use num_traits::FromPrimitive;
 use ledger_log::*;
 
-macro_rules! reject_ln {
-    () => { reject_on(core::file!(),core::line!()) }
-}
-
 trait IsLengthDelimited { }
 
 pub fn parse_varint<'a: 'c, 'c, T, BS: Readable>(input: &'a mut BS) -> impl Future<Output = T> + 'c where
@@ -56,7 +52,7 @@ macro_rules! VarintPrimitive {
         }
 
         impl<BS: Readable> AsyncParser<[<$name:camel>], BS> for DefaultInterp {
-            type State<'c> = impl Future<Output = Self::Output>;
+            type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
             fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
                 async move {
                     let $v = parse_varint::<'a, 'c, $returning, BS>(input).await;
@@ -66,7 +62,7 @@ macro_rules! VarintPrimitive {
         }
 
         impl<BS: Readable> AsyncParser<[<$name:camel>], BS> for DropInterp {
-            type State<'c> = impl Future<Output = Self::Output>;
+            type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
             fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
                 async move {
                     parse_varint::<'a, 'c, $returning, BS>(input).await;
@@ -88,7 +84,7 @@ impl HasOutput<Bool> for DefaultInterp {
 }
 
 impl<BS: Readable> AsyncParser<Bool, BS> for DefaultInterp {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
             parse_varint::<'a, 'c, u16, BS>(input).await == 1
@@ -106,17 +102,17 @@ impl<BS: Readable> AsyncParser<Fixed64, BS> for DefaultInterp {
             input.read().await
         }
     }
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
 }
 
 pub trait LengthDelimitedParser<Schema, BS: Readable> : HasOutput<Schema>{
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c>;
-    type State<'c>: Future<Output = Self::Output>;
+    type State<'c>: Future<Output = Self::Output> where BS: 'c, Self: 'c;
 }
 
 
 impl<T, S: LengthDelimitedParser<T, BS>, R, BS: Readable, F: Fn(<S as HasOutput<T>>::Output) -> Option<R>> LengthDelimitedParser<T, BS> for Action<S, F> {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c, F: 'c, S: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
         async move {
             match self.1(self.0.parse(input, length).await) {
@@ -134,7 +130,7 @@ impl<T, S: HasOutput<T>, R, Fut: Future<Output = R>, F: Fn(<S as HasOutput<T>>::
 }
 
 impl<T, S: LengthDelimitedParser<T, BS>, R, BS: Readable, Fut: Future<Output = R>, F: Fn(<S as HasOutput<T>>::Output) -> Fut> LengthDelimitedParser<T, BS> for Bind<S, F> {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c, F: 'c, S: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
         async move {
             self.1(self.0.parse(input, length).await).await
@@ -142,7 +138,7 @@ impl<T, S: LengthDelimitedParser<T, BS>, R, BS: Readable, Fut: Future<Output = R
     }
 }
 impl<T, S: AsyncParser<T, BS>, R, BS: Readable, Fut: Future<Output = R>, F: Fn(<S as HasOutput<T>>::Output) -> Fut> AsyncParser<T, BS> for Bind<S, F> {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c, F: 'c, S: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
             self.1(self.0.parse(input).await).await
@@ -151,7 +147,7 @@ impl<T, S: AsyncParser<T, BS>, R, BS: Readable, Fut: Future<Output = R>, F: Fn(<
 }
 
 impl<Schema, BS: Readable> LengthDelimitedParser<Schema, BS> for DropInterp {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
         async move {
             trace!("Dropping");
@@ -187,7 +183,7 @@ impl<const N : usize, BS: Readable> LengthDelimitedParser<String, BS> for Buffer
         // trace!("Buffering siz {}", core::mem::size_of_val(&f));
         f
     }
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
 }
 
 impl<const N : usize> HasOutput<Bytes> for Buffer<N> {
@@ -200,7 +196,7 @@ impl<const N: usize, BS: Readable> LengthDelimitedParser<Bytes, BS> for Buffer<N
         trace!("Buffering siz {}", core::mem::size_of_val(&f));
         f
     }
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
 }
 
 impl<const FIELD_NUMBER: u32, Schema: ProtobufWireFormat, Value: HasOutput<Schema>> HasOutput<MessageField<FIELD_NUMBER, Schema>> for MessageFieldInterp<FIELD_NUMBER, Value> {
@@ -244,7 +240,7 @@ impl<Schema, M: LengthDelimitedParser<Schema, BS>, BS: Readable> LengthDelimited
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
         self.1.parse(input, length)
     }
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c, M: 'c, Schema: 'c;
 }
 
 
@@ -394,7 +390,7 @@ macro_rules! define_message {
                     trace!("Future size for {}: {}", stringify!($name), core::mem::size_of_val(&rv));
                     rv
                 }
-                type State<'c> = impl Future<Output = Self::Output>;
+                type State<'c> = impl Future<Output = Self::Output> where $([<Field $field:camel Interp>]: 'c),*;
             }
 
             pub struct [<$name UnorderedInterp>]<$([<Field $field:camel>]),*> {
@@ -454,7 +450,7 @@ macro_rules! define_message {
                         result
                     }
                 }
-                type State<'c> = impl Future<Output = Self::Output>;
+                type State<'c> = impl Future<Output = Self::Output> where $([<Field $field:camel Interp>]: 'c),*;
             }
         }
     };
@@ -490,7 +486,7 @@ macro_rules! define_enum {
                         $crate::protobufs::async_parser::skip_varint(input).await;
                     }
                 }
-                type State<'c> = impl Future<Output = Self::Output>;
+                type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
             }
 
             impl ProtobufWireFormat for [<$name:camel>] {
@@ -506,7 +502,7 @@ macro_rules! define_enum {
                         }
                     }
                 }
-                type State<'c> = impl Future<Output = Self::Output>;
+                type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
             }
         }
     }
@@ -524,7 +520,7 @@ impl<E: TrieLookup> HasOutput<String> for StringEnum<E> {
 }
 
 impl<E: 'static + TrieLookup + core::fmt::Debug, BS: Readable> LengthDelimitedParser<String, BS> for StringEnum<E> where [(); E::N]: Sized {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
         async move {
             let mut cursor = E::start();
@@ -568,7 +564,7 @@ macro_rules! any_of {
         }
 
         impl<BS: 'static + Clone + Readable + $crate::async_parser::ReadableLength, O, $([< $variant:camel Interp >]: LengthDelimitedParser<$schema, BS> + HasOutput<$schema, Output = O>),*> LengthDelimitedParser<Any, BS> for $name<$([< $variant:camel Interp >]),*> {
-            type State<'c> = impl Future<Output = Self::Output>;
+            type State<'c> = impl Future<Output = Self::Output> where $([< $variant:camel Interp >]: 'c),*;
             fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
                 async move {
                     let start = input.index();
@@ -720,7 +716,7 @@ impl LengthDelimitedParser<Any> for AnyOf<T> {
 
 /// ObserveBytes for LengthDelimitedParser.
 impl<X: 'static, F, S: LengthDelimitedParser<A, HashIntercept<BS, X>>, A, BS: 'static + Readable + Clone> LengthDelimitedParser<A, BS> for ObserveBytes<X, F, S> {
-    type State<'c> = impl Future<Output = Self::Output>;
+    type State<'c> = impl Future<Output = Self::Output> where S: 'c, F: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
         async move {
             let mut hi = HashIntercept(input.clone(), (self.0)());
