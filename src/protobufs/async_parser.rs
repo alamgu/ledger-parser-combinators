@@ -545,6 +545,24 @@ pub async fn skip_input<BS: Readable>(bs: &mut BS, length: usize) {
     }
 }
 
+pub struct RejectInterp<O>(core::marker::PhantomData<O>);
+
+pub const fn reject_interp<O>() -> RejectInterp<O> {
+    RejectInterp(core::marker::PhantomData)
+}
+
+impl<Schema, O> HasOutput<Schema> for RejectInterp<O> {
+    type Output = O;
+}
+
+impl<Schema, O, BS: Readable> LengthDelimitedParser<Schema, BS> for RejectInterp<O> {
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c, O: 'c;
+
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, _input: &'a mut BS, _length: usize) -> Self::State<'c> {
+        reject()
+    }
+}
+
 pub use trie_enum::enum_trie;
 
 #[macro_export]
@@ -554,17 +572,18 @@ macro_rules! any_of {
         use $crate::protobufs::async_parser::TrieLookup;
 
         enum_trie! { [< $name Discriminator >] { $($variant = $string),* } }
-        struct $name<$([< $variant:camel Interp >]),*>{
+        struct $name<DefaultInterp, $([< $variant:camel Interp >]),*>{
+            default: DefaultInterp,
             $([<$variant:snake>]: [< $variant:camel Interp >]),*
         }
 
-        impl<O, $([< $variant:camel Interp >]: HasOutput<$schema, Output = O>),*> HasOutput<Any> for $name<$([< $variant:camel Interp >]),*>
+        impl<O, DefaultInterp: HasOutput<RawAny, Output = O>, $([< $variant:camel Interp >]: HasOutput<$schema, Output = O>),*> HasOutput<Any> for $name<DefaultInterp, $([< $variant:camel Interp >]),*>
         {
             type Output = O;
         }
 
-        impl<BS: 'static + Clone + Readable + $crate::async_parser::ReadableLength, O, $([< $variant:camel Interp >]: LengthDelimitedParser<$schema, BS> + HasOutput<$schema, Output = O>),*> LengthDelimitedParser<Any, BS> for $name<$([< $variant:camel Interp >]),*> {
-            type State<'c> = impl Future<Output = Self::Output> where $([< $variant:camel Interp >]: 'c),*;
+        impl<BS: 'static + Clone + Readable + $crate::async_parser::ReadableLength, O, DefaultInterp: LengthDelimitedParser<RawAny, BS> + HasOutput<RawAny, Output = O>, $([< $variant:camel Interp >]: LengthDelimitedParser<$schema, BS> + HasOutput<$schema, Output = O>),*> LengthDelimitedParser<Any, BS> for $name<DefaultInterp, $([< $variant:camel Interp >]),*> {
+            type State<'c> = impl Future<Output = Self::Output> where DefaultInterp: 'c, $([< $variant:camel Interp >]: 'c),*;
             fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
                 async move {
                     let start = input.index();
@@ -613,7 +632,7 @@ macro_rules! any_of {
                     }
 
                     match discriminator {
-                        None => { info!("Unknown URL in any"); reject_on(core::file!(),core::line!()).await }
+                        None => { rv = Some(self.default.parse(input, length).await); }
                         $(
                             Some([<$name Discriminator>]::$variant) => {
                                 trace!("Parsing value for discriminator {:?}", discriminator);
@@ -650,7 +669,6 @@ macro_rules! any_of {
                                 }
                             }
                         )*
-
                     }
 
                     match rv {
@@ -661,6 +679,13 @@ macro_rules! any_of {
             }
         }
     } }
+}
+
+define_message! {
+    RawAny {
+        type_url: string = 1,
+        value: bytes = 2
+    }
 }
 
 /*
