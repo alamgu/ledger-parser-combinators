@@ -1,12 +1,14 @@
 #![cfg_attr(target_family="bolos", no_std)]
 #![allow(incomplete_features)]
 
+#![feature(future_poll_fn)]
 #![feature(min_specialization)]
 #![feature(generic_associated_types)]
 #![feature(auto_traits)]
 #![feature(negative_impls)]
 #![feature(trace_macros)]
 #![feature(log_syntax)]
+#![feature(pin_macro)]
 #![feature(type_alias_impl_trait)]
 #![feature(generic_const_exprs)]
 
