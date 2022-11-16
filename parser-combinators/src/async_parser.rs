@@ -15,6 +15,9 @@ use core::future::Future;
 use core::convert::TryInto;
 use arrayvec::ArrayVec;
 use ledger_log::*;
+use core::pin::Pin;
+use core::task::Context;
+use pin_project::pin_project;
 
 pub trait HasDefParser<BS: Readable> where DefaultInterp: HasOutput<Self> {
     fn def_parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c>;
@@ -30,17 +33,40 @@ impl<T, BS: Readable> HasDefParser<BS> for T where DefaultInterp: AsyncParser<T,
     type State<'c> = impl Future<Output = <DefaultInterp as HasOutput<Self>>::Output> where BS: 'c, T: 'c;
 }
 
+static mut REJECTED : bool = false;
+
 /// Reject the parse.
 pub fn reject<T>() -> impl Future<Output = T> {
     error!("Rejecting parse");
     // Do some out-of-band rejection thingie
+    unsafe { REJECTED = true; }
     core::future::pending()
 }
 
 #[allow(unused_variables)]
 pub fn reject_on<T>(file: &'static str, line: u32) -> impl Future<Output = T> {
     error!("Rejecting, {}:{}", file, line);
+    unsafe { REJECTED = true; }
     core::future::pending()
+}
+
+pub fn reset_rejected() {
+    unsafe { REJECTED = false; }
+}
+
+#[pin_project]
+pub struct TryFuture<F: Future>(#[pin] pub F);
+impl<F: Future> Future for TryFuture<F> {
+    type Output = Option<F::Output>;
+    fn poll(self: Pin<&mut Self>, ctxd: &mut Context<'_>) -> core::task::Poll<Self::Output> {
+        use core::task::Poll;
+        unsafe { REJECTED = false; }
+        match self.project().0.poll(ctxd) {
+            Poll::Pending if unsafe { REJECTED } => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(r) => Poll::Ready(Some(r)),
+        }
+    }
 }
 
 /// Readable defines an interface for input to a parser.
