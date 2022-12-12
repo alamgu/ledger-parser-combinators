@@ -20,23 +20,21 @@ bstringify = "0.1.2"
 enum-init = { git = "https://github.com/obsidiansystems/enum-init" }
 num-traits = { version = "0.2.14", default-features = false }
 num-derive = "0.3.3"
-trie-enum = "*"
+trie-enum = { git = "https://github.com/alamgu/trie-enum" }
 pin-project = "1.0.12"
 
 [dependencies.ledger-log]
-version = "*"
+git = "https://github.com/alamgu/ledger-log"
 optional = true
 
 [features]
 "logging" = [ "ledger-log" ]
 
-[target.'cfg(target_family = "bolos")'.dependencies.nanos_sdk]
-nanos_sdk = { version = "*", features = ["speculos"] }
-features = [ "speculos" ]
+[target.'cfg(target_family = "bolos")'.dependencies]
+nanos_sdk = { git = "https://github.com/LedgerHQ/ledger-nanos-sdk.git" } # , features = ["speculos"] }
 
 [target.'cfg(target_family = "bolos")'.dev-dependencies]
 testmacro = { git = "https://github.com/yhql/testmacro"}
-nanos_sdk = { version = "*", features = ["speculos"] }
 
 [patch."https://github.com/LedgerHQ/ledger-nanos-sdk.git".nanos_sdk]
 git = "https://github.com/ObsidianSystems/ledger-nanos-sdk.git"
