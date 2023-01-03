@@ -313,21 +313,25 @@ impl<A, X, F, S: HasOutput<A>> HasOutput<A> for ObserveBytes<X, F, S> {
 /// HashIntercept wraps a Readable and updates a hash-like object with the data as it passes.
 ///
 /// Used to support ObserveBytes for async parsers.
-pub struct HashIntercept<BS, X>(pub BS, pub X);
+pub struct HashIntercept<BS, X, F>(pub BS, pub X, pub F);
 
-impl<BS: 'static + Readable, X: 'static> Readable for HashIntercept<BS, X> {
-    type OutFut<'a, const N: usize> = impl core::future::Future<Output = [u8; N]>;
+impl<BS: 'static + Readable, X: 'static, F: Fn(&mut X, &[u8])->()> Readable for HashIntercept<BS, X, F> {
+    type OutFut<'a, const N: usize> = impl core::future::Future<Output = [u8; N]> where F: 'a;
     fn read<'a: 'b, 'b, const N: usize>(&'a mut self) -> Self::OutFut<'b, N> {
-        self.0.read()
+        async move {
+            let d = self.0.read().await;
+            self.2(&mut self.1, &d);
+            d
+        }
     }
 }
 
 /// ObserveBytes for AsyncParser operates by passing a HashIntercept to the sub-parser.
-impl<X: 'static, F, S: AsyncParser<A, HashIntercept<BS, X>>, A, BS: 'static + Readable + Clone> AsyncParser<A, BS> for ObserveBytes<X, F, S> {
+impl<X: 'static, F: Fn(&mut X, &[u8])->() + Copy, S: AsyncParser<A, HashIntercept<BS, X, F>>, A, BS: 'static + Readable + Clone> AsyncParser<A, BS> for ObserveBytes<X, F, S> {
     type State<'c> = impl Future<Output = Self::Output> where S: 'c, F: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
-            let mut hi = HashIntercept(input.clone(), (self.0)());
+            let mut hi = HashIntercept(input.clone(), (self.0)(), self.1);
             let rv = self.2.parse(&mut hi).await;
             *input = hi.0;
             (hi.1, Some(rv))

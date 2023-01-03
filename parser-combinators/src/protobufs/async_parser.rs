@@ -740,11 +740,11 @@ impl LengthDelimitedParser<Any> for AnyOf<T> {
 */
 
 /// ObserveBytes for LengthDelimitedParser.
-impl<X: 'static, F, S: LengthDelimitedParser<A, HashIntercept<BS, X>>, A, BS: 'static + Readable + Clone> LengthDelimitedParser<A, BS> for ObserveBytes<X, F, S> {
+impl<X: 'static, F: Fn(&mut X, &[u8])->() + Copy, S: LengthDelimitedParser<A, HashIntercept<BS, X, F>>, A, BS: 'static + Readable + Clone> LengthDelimitedParser<A, BS> for ObserveBytes<X, F, S> {
     type State<'c> = impl Future<Output = Self::Output> where S: 'c, F: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
         async move {
-            let mut hi = HashIntercept(input.clone(), (self.0)());
+            let mut hi = HashIntercept(input.clone(), (self.0)(), self.1);
             let rv = self.2.parse(&mut hi, length).await;
             *input = hi.0;
             (hi.1, Some(rv))
