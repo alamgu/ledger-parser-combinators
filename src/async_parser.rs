@@ -223,7 +223,7 @@ impl<S, N, I, const M: usize, BS: Readable> AsyncParser<DArray<N, I, M>, BS> for
                 Err(_) => reject().await,
             };
             let mut accumulator = ArrayVec::new();
-            for _ in 1..length {
+            for _ in 0..length {
                 accumulator.push(self.0.parse(input).await);
             }
             accumulator
@@ -260,6 +260,24 @@ impl<T, S: AsyncParser<T, BS>, R, F: Fn(<S as HasOutput<T>>::Output) -> Option<R
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
             match self.1(self.0.parse(input).await) {
+                Some(a) => a,
+                None => reject().await,
+            }
+        }
+    }
+}
+
+pub struct FutAction<S, F>(pub S, pub F);
+
+impl<T, S: HasOutput<T>, R, F: Fn(<S as HasOutput<T>>::Output) -> Fut, Fut: Future<Output = Option<R>>> HasOutput<T> for FutAction<S, F> {
+    type Output = R;
+}
+
+impl<T, S: AsyncParser<T, BS>, R, F: Fn(<S as HasOutput<T>>::Output) -> Fut, Fut: Future<Output = Option<R>>, BS: Readable> AsyncParser<T, BS> for FutAction<S, F> {
+    type State<'c> = impl Future<Output = Self::Output> where BS: 'c, F: 'c, S: 'c;
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
+        async move {
+            match self.1(self.0.parse(input).await).await {
                 Some(a) => a,
                 None => reject().await,
             }
