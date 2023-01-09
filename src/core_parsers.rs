@@ -12,7 +12,7 @@ impl RV for Byte {
 }
 
 /// Fixed-length array.
-impl< I : RV, const N : usize > RV for Array<I, N> {
+impl<I: RV, const N: usize> RV for Array<I, N> {
     type R = [I::R; N];
 }
 
@@ -27,7 +27,6 @@ where
 
 macro_rules! number_parser {
     ($p:ident, $t:ty) => {
-
         impl<const E: Endianness> RV for $p<E> {
             type R = $t;
         }

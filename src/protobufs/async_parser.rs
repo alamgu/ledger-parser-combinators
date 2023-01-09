@@ -1,31 +1,35 @@
 // use crate::schema::*;
-use crate::interp::*;
-use core::future::Future;
 use crate::async_parser::*;
-use crate::protobufs::schema::*;
+use crate::interp::*;
 use crate::protobufs::interp::*;
+use crate::protobufs::schema::*;
 use arrayvec::ArrayVec;
-pub use num_traits::FromPrimitive;
+use core::future::Future;
 #[cfg(feature = "logging")]
 use ledger_log::*;
+pub use num_traits::FromPrimitive;
 
-trait IsLengthDelimited { }
+trait IsLengthDelimited {}
 
-pub fn parse_varint<'a: 'c, 'c, T, BS: Readable>(input: &'a mut BS) -> impl Future<Output = T> + 'c where
-    T: Default + core::ops::Shl<Output = T> + core::ops::AddAssign + core::convert::From<u8>
+pub fn parse_varint<'a: 'c, 'c, T, BS: Readable>(input: &'a mut BS) -> impl Future<Output = T> + 'c
+where
+    T: Default + core::ops::Shl<Output = T> + core::ops::AddAssign + core::convert::From<u8>,
 {
     async move {
-        let mut accumulator : T = Default::default();
-        let mut n : u8 = 0;
+        let mut accumulator: T = Default::default();
+        let mut n: u8 = 0;
         loop {
-            let [current] : [u8; 1] = input.read().await;
+            let [current]: [u8; 1] = input.read().await;
             // Check that adding this base-128 digit will not overflow
-            if 7*n as usize > (core::mem::size_of::<T>()-1)*8 && 0 != ((current & 0x7f) >> (core::mem::size_of::<T>()*8 - (7*n as usize))) {
+            if 7 * n as usize > (core::mem::size_of::<T>() - 1) * 8
+                && 0 != ((current & 0x7f) >> (core::mem::size_of::<T>() * 8 - (7 * n as usize)))
+            {
                 #[cfg(feature = "logging")]
                 trace!("Malformed varint");
-                reject_on(core::file!(),core::line!()).await
+                reject_on(core::file!(), core::line!()).await
             }
-            accumulator += core::convert::Into::<T>::into(current & 0x7f) << core::convert::From::from(7*n as u8);
+            accumulator += core::convert::Into::<T>::into(current & 0x7f)
+                << core::convert::From::from(7 * n as u8);
             n += 1;
             if current & 0x80 == 0 {
                 return accumulator;
@@ -38,7 +42,7 @@ pub fn skip_varint<'a: 'c, 'c, BS: Readable>(input: &'a mut BS) -> impl Future<O
 {
     async move {
         loop {
-            let [current] : [u8; 1] = input.read().await;
+            let [current]: [u8; 1] = input.read().await;
             if current & 0x80 == 0 {
                 return ();
             }
@@ -88,9 +92,7 @@ impl HasOutput<Bool> for DefaultInterp {
 impl<BS: Readable> AsyncParser<Bool, BS> for DefaultInterp {
     type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
-        async move {
-            parse_varint::<'a, 'c, u16, BS>(input).await == 1
-        }
+        async move { parse_varint::<'a, 'c, u16, BS>(input).await == 1 }
     }
 }
 
@@ -100,26 +102,33 @@ impl HasOutput<Fixed64> for DefaultInterp {
 
 impl<BS: Readable> AsyncParser<Fixed64, BS> for DefaultInterp {
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
-        async move {
-            input.read().await
-        }
+        async move { input.read().await }
     }
     type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
 }
 
-pub trait LengthDelimitedParser<Schema, BS: Readable> : HasOutput<Schema>{
+pub trait LengthDelimitedParser<Schema, BS: Readable>: HasOutput<Schema> {
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c>;
-    type State<'c>: Future<Output = Self::Output> where BS: 'c, Self: 'c;
+    type State<'c>: Future<Output = Self::Output>
+    where
+        BS: 'c,
+        Self: 'c;
 }
 
-
-impl<T, S: LengthDelimitedParser<T, BS>, R, BS: Readable, F: Fn(<S as HasOutput<T>>::Output) -> Option<R>> LengthDelimitedParser<T, BS> for Action<S, F> {
+impl<
+        T,
+        S: LengthDelimitedParser<T, BS>,
+        R,
+        BS: Readable,
+        F: Fn(<S as HasOutput<T>>::Output) -> Option<R>,
+    > LengthDelimitedParser<T, BS> for Action<S, F>
+{
     type State<'c> = impl Future<Output = Self::Output> where BS: 'c, F: 'c, S: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
         async move {
             match self.1(self.0.parse(input, length).await) {
                 Some(a) => a,
-                None => reject_on(core::file!(),core::line!()).await,
+                None => reject_on(core::file!(), core::line!()).await,
             }
         }
     }
@@ -127,24 +136,38 @@ impl<T, S: LengthDelimitedParser<T, BS>, R, BS: Readable, F: Fn(<S as HasOutput<
 
 struct Bind<S, F>(S, F);
 
-impl<T, S: HasOutput<T>, R, Fut: Future<Output = R>, F: Fn(<S as HasOutput<T>>::Output) -> Fut> HasOutput<T> for Bind<S, F> {
+impl<T, S: HasOutput<T>, R, Fut: Future<Output = R>, F: Fn(<S as HasOutput<T>>::Output) -> Fut>
+    HasOutput<T> for Bind<S, F>
+{
     type Output = Fut::Output;
 }
 
-impl<T, S: LengthDelimitedParser<T, BS>, R, BS: Readable, Fut: Future<Output = R>, F: Fn(<S as HasOutput<T>>::Output) -> Fut> LengthDelimitedParser<T, BS> for Bind<S, F> {
+impl<
+        T,
+        S: LengthDelimitedParser<T, BS>,
+        R,
+        BS: Readable,
+        Fut: Future<Output = R>,
+        F: Fn(<S as HasOutput<T>>::Output) -> Fut,
+    > LengthDelimitedParser<T, BS> for Bind<S, F>
+{
     type State<'c> = impl Future<Output = Self::Output> where BS: 'c, F: 'c, S: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
-        async move {
-            self.1(self.0.parse(input, length).await).await
-        }
+        async move { self.1(self.0.parse(input, length).await).await }
     }
 }
-impl<T, S: AsyncParser<T, BS>, R, BS: Readable, Fut: Future<Output = R>, F: Fn(<S as HasOutput<T>>::Output) -> Fut> AsyncParser<T, BS> for Bind<S, F> {
+impl<
+        T,
+        S: AsyncParser<T, BS>,
+        R,
+        BS: Readable,
+        Fut: Future<Output = R>,
+        F: Fn(<S as HasOutput<T>>::Output) -> Fut,
+    > AsyncParser<T, BS> for Bind<S, F>
+{
     type State<'c> = impl Future<Output = Self::Output> where BS: 'c, F: 'c, S: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
-        async move {
-            self.1(self.0.parse(input).await).await
-        }
+        async move { self.1(self.0.parse(input).await).await }
     }
 }
 
@@ -163,13 +186,16 @@ impl<Schema, BS: Readable> LengthDelimitedParser<Schema, BS> for DropInterp {
     }
 }
 
-impl<const N : usize> HasOutput<String> for Buffer<N> {
+impl<const N: usize> HasOutput<String> for Buffer<N> {
     type Output = ArrayVec<u8, N>;
 }
 
-async fn read_arrayvec_n<'a, const N: usize, BS: Readable>(input: &'a mut BS, mut length: usize) -> ArrayVec<u8, N> {
+async fn read_arrayvec_n<'a, const N: usize, BS: Readable>(
+    input: &'a mut BS,
+    mut length: usize,
+) -> ArrayVec<u8, N> {
     if length > N {
-        reject_on(core::file!(),core::line!()).await
+        reject_on(core::file!(), core::line!()).await
     }
     let mut accumulator = ArrayVec::new();
     //for _ in 0..length {
@@ -181,7 +207,7 @@ async fn read_arrayvec_n<'a, const N: usize, BS: Readable>(input: &'a mut BS, mu
     accumulator
 }
 
-impl<const N : usize, BS: Readable> LengthDelimitedParser<String, BS> for Buffer<N> {
+impl<const N: usize, BS: Readable> LengthDelimitedParser<String, BS> for Buffer<N> {
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
         let f = read_arrayvec_n(input, length);
         // trace!("Buffering siz {}", core::mem::size_of_val(&f));
@@ -190,7 +216,7 @@ impl<const N : usize, BS: Readable> LengthDelimitedParser<String, BS> for Buffer
     type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
 }
 
-impl<const N : usize> HasOutput<Bytes> for Buffer<N> {
+impl<const N: usize> HasOutput<Bytes> for Buffer<N> {
     type Output = ArrayVec<u8, N>;
 }
 
@@ -204,7 +230,9 @@ impl<const N: usize, BS: Readable> LengthDelimitedParser<Bytes, BS> for Buffer<N
     type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
 }
 
-impl<const FIELD_NUMBER: u32, Schema: ProtobufWireFormat, Value: HasOutput<Schema>> HasOutput<MessageField<FIELD_NUMBER, Schema>> for MessageFieldInterp<FIELD_NUMBER, Value> {
+impl<const FIELD_NUMBER: u32, Schema: ProtobufWireFormat, Value: HasOutput<Schema>>
+    HasOutput<MessageField<FIELD_NUMBER, Schema>> for MessageFieldInterp<FIELD_NUMBER, Value>
+{
     type Output = Value::Output;
 }
 
@@ -221,17 +249,21 @@ impl<BS: 'static + Readable> Readable for TrackLength<BS> {
 
 pub async fn skip_field<BS: Readable>(fmt: ProtobufWire, i: &mut BS) {
     match fmt {
-        ProtobufWire::Varint => { skip_varint::<'_, '_, BS>(i).await } // <DropInterp as AsyncParser<Varint, BS>>::parse(&DropInterp, i).await; }
-        ProtobufWire::Fixed64Bit => { i.read::<8>().await; }
+        ProtobufWire::Varint => skip_varint::<'_, '_, BS>(i).await, // <DropInterp as AsyncParser<Varint, BS>>::parse(&DropInterp, i).await; }
+        ProtobufWire::Fixed64Bit => {
+            i.read::<8>().await;
+        }
         ProtobufWire::LengthDelimited => {
             let len = <DefaultInterp as AsyncParser<Int32, BS>>::parse(&DefaultInterp, i).await;
             for _ in 0..len {
                 i.read::<1>().await;
             }
         }
-        ProtobufWire::StartGroup => { reject_on(core::file!(),core::line!()).await }
-        ProtobufWire::EndGroup => { reject_on(core::file!(),core::line!()).await }
-        ProtobufWire::Fixed32Bit => { i.read::<4>().await; }
+        ProtobufWire::StartGroup => reject_on(core::file!(), core::line!()).await,
+        ProtobufWire::EndGroup => reject_on(core::file!(), core::line!()).await,
+        ProtobufWire::Fixed32Bit => {
+            i.read::<4>().await;
+        }
     }
 }
 
@@ -241,13 +273,14 @@ impl<Schema, M: HasOutput<Schema>> HasOutput<Bytes> for BytesAsMessage<Schema, M
     type Output = M::Output;
 }
 
-impl<Schema, M: LengthDelimitedParser<Schema, BS>, BS: Readable> LengthDelimitedParser<Bytes, BS> for BytesAsMessage<Schema, M> {
+impl<Schema, M: LengthDelimitedParser<Schema, BS>, BS: Readable> LengthDelimitedParser<Bytes, BS>
+    for BytesAsMessage<Schema, M>
+{
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
         self.1.parse(input, length)
     }
     type State<'c> = impl Future<Output = Self::Output> where BS: 'c, M: 'c, Schema: 'c;
 }
-
 
 pub use paste::paste;
 
@@ -534,7 +567,11 @@ impl<E: TrieLookup> HasOutput<String> for StringEnum<E> {
     type Output = E;
 }
 
-impl<E: 'static + TrieLookup + core::fmt::Debug, BS: Readable> LengthDelimitedParser<String, BS> for StringEnum<E> where [(); E::N]: Sized {
+impl<E: 'static + TrieLookup + core::fmt::Debug, BS: Readable> LengthDelimitedParser<String, BS>
+    for StringEnum<E>
+where
+    [(); E::N]: Sized,
+{
     type State<'c> = impl Future<Output = Self::Output> where BS: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
         async move {
@@ -542,13 +579,13 @@ impl<E: 'static + TrieLookup + core::fmt::Debug, BS: Readable> LengthDelimitedPa
             for _ in 0..length {
                 let [c] = input.read().await;
                 cursor = match cursor.step(c) {
-                    None => reject_on(core::file!(),core::line!()).await,
-                    Some(cur) => cur
+                    None => reject_on(core::file!(), core::line!()).await,
+                    Some(cur) => cur,
                 }
             }
             match cursor.get_val() {
-                None => reject_on(core::file!(),core::line!()).await,
-                Some(r) => *r
+                None => reject_on(core::file!(), core::line!()).await,
+                Some(r) => *r,
             }
         }
     }
@@ -699,7 +736,7 @@ macro_rules! any_of {
                     }
 
                     match rv {
-                        Some(r) => { 
+                        Some(r) => {
                             #[cfg(feature = "logging")]
                             trace!("Good value"); r },
                         None => {
@@ -771,7 +808,14 @@ impl LengthDelimitedParser<Any> for AnyOf<T> {
 */
 
 /// ObserveBytes for LengthDelimitedParser.
-impl<X: 'static, F: Fn(&mut X, &[u8])->() + Copy, S: LengthDelimitedParser<A, HashIntercept<BS, X, F>>, A, BS: 'static + Readable + Clone> LengthDelimitedParser<A, BS> for ObserveBytes<X, F, S> {
+impl<
+        X: 'static,
+        F: Fn(&mut X, &[u8]) -> () + Copy,
+        S: LengthDelimitedParser<A, HashIntercept<BS, X, F>>,
+        A,
+        BS: 'static + Readable + Clone,
+    > LengthDelimitedParser<A, BS> for ObserveBytes<X, F, S>
+{
     type State<'c> = impl Future<Output = Self::Output> where S: 'c, F: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
         async move {
@@ -798,7 +842,7 @@ mod test {
         fn read<'a: 'b, 'b, const N: usize>(&'a mut self) -> Self::OutFut<'b, N> {
             if self.1 + N <= self.0.len() {
                 let offset = self.1;
-                self.1+=N;
+                self.1 += N;
                 use core::convert::TryInto;
                 core::future::ready(self.0[offset..self.1].try_into().unwrap())
             } else {
@@ -809,7 +853,12 @@ mod test {
 
     use core::task::*;
 
-    static RAW_WAKER_VTABLE : RawWakerVTable = RawWakerVTable::new(|a| RawWaker::new(a, &RAW_WAKER_VTABLE), |_| {}, |_| {}, |_| {});
+    static RAW_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
+        |a| RawWaker::new(a, &RAW_WAKER_VTABLE),
+        |_| {},
+        |_| {},
+        |_| {},
+    );
 
     fn poll_once<F: Future>(mut input: F) -> core::task::Poll<F::Output> {
         let waker = unsafe { Waker::from_raw(RawWaker::new(&(), &RAW_WAKER_VTABLE)) };
@@ -820,32 +869,44 @@ mod test {
 
     #[test]
     fn test_varint() {
-        let mut input = TestReadable([0,0,0],0);
+        let mut input = TestReadable([0, 0, 0], 0);
         assert_eq!(poll_once(Int32.def_parse(&mut input)), Poll::Ready(0));
-        let mut input = TestReadable([255,0,0],0);
+        let mut input = TestReadable([255, 0, 0], 0);
         assert_eq!(poll_once(Int32.def_parse(&mut input)), Poll::Ready(127));
-        let mut input = TestReadable([254,0,0],0);
+        let mut input = TestReadable([254, 0, 0], 0);
         assert_eq!(poll_once(Sint32.def_parse(&mut input)), Poll::Ready(63));
-        let mut input = TestReadable([255,0,0],0);
+        let mut input = TestReadable([255, 0, 0], 0);
         assert_eq!(poll_once(Sint32.def_parse(&mut input)), Poll::Ready(-64));
-        let mut input = TestReadable([0,0,0],0);
+        let mut input = TestReadable([0, 0, 0], 0);
         assert_eq!(poll_once(Sint32.def_parse(&mut input)), Poll::Ready(0));
-        let mut input = TestReadable([1,0,0],0);
+        let mut input = TestReadable([1, 0, 0], 0);
         assert_eq!(poll_once(Sint32.def_parse(&mut input)), Poll::Ready(-1));
-        let mut input = TestReadable([2,0,0],0);
+        let mut input = TestReadable([2, 0, 0], 0);
         assert_eq!(poll_once(Sint32.def_parse(&mut input)), Poll::Ready(1));
-        let mut input = TestReadable([128,128,128,128,2,0,0],0);
-        assert_eq!(poll_once(Int32.def_parse(&mut input)), Poll::Ready(1<<(7*4+1)));
-        let mut input = TestReadable([128,128,128,128,2,0,0],0);
-        assert_eq!(poll_once(Sint32.def_parse(&mut input)), Poll::Ready((1<<(7*4+1))/2));
+        let mut input = TestReadable([128, 128, 128, 128, 2, 0, 0], 0);
+        assert_eq!(
+            poll_once(Int32.def_parse(&mut input)),
+            Poll::Ready(1 << (7 * 4 + 1))
+        );
+        let mut input = TestReadable([128, 128, 128, 128, 2, 0, 0], 0);
+        assert_eq!(
+            poll_once(Sint32.def_parse(&mut input)),
+            Poll::Ready((1 << (7 * 4 + 1)) / 2)
+        );
     }
 
     #[test]
     fn test_bytes() {
-        let mut input = TestReadable([1,2,3,4,5],0);
-        if let Poll::Ready(res) = poll_once(<Buffer<10> as LengthDelimitedParser<Bytes, TestReadable<5>>>::parse(&Buffer::<10>, &mut input, 5)) {
-            assert_eq!(&res[..], &[1,2,3,4,5]);
-        } else { assert_eq!(true, false) }
+        let mut input = TestReadable([1, 2, 3, 4, 5], 0);
+        if let Poll::Ready(res) = poll_once(<Buffer<10> as LengthDelimitedParser<
+            Bytes,
+            TestReadable<5>,
+        >>::parse(&Buffer::<10>, &mut input, 5))
+        {
+            assert_eq!(&res[..], &[1, 2, 3, 4, 5]);
+        } else {
+            assert_eq!(true, false)
+        }
     }
 
     define_message! { OtherMessage { foo: bytes = 0 } }
@@ -858,12 +919,12 @@ mod test {
     define_message! { SimpleMessage { foo: message(OtherMessage) = 0, bar: enum(SimpleEnum) = 1 } }
     define_enum! { SimpleEnum { default = 0, noodle = 1 } }
     define_message! {
-        SignDoc {
-            body_bytes: bytes = 1,
-            auth_info_bytes: bytes = 2,
-            chain_id: string = 3,
-            account_number: Uint64 = 4
-        }}
+    SignDoc {
+        body_bytes: bytes = 1,
+        auth_info_bytes: bytes = 2,
+        chain_id: string = 3,
+        account_number: Uint64 = 4
+    }}
 
     define_message! {
         Any {
@@ -889,57 +950,133 @@ mod test {
 
     #[test]
     fn test_messages() {
-        let mut input = TestReadable([(0<<3)+2,2,0,1],0);
+        let mut input = TestReadable([(0 << 3) + 2, 2, 0, 1], 0);
         let cell = core::cell::RefCell::new(0);
         let interp = OtherMessageInterp {
-            field_foo: Action(Buffer::<5>, |a: ArrayVec<u8, 5>| { *cell.borrow_mut()+=a.len() as u64; Some(()) }),
+            field_foo: Action(Buffer::<5>, |a: ArrayVec<u8, 5>| {
+                *cell.borrow_mut() += a.len() as u64;
+                Some(())
+            }),
         };
         if let Poll::Ready(res) = poll_once(interp.parse(&mut input, 4)) {
             assert_eq!(res, ());
             assert_eq!(cell.into_inner(), 2);
-        } else { assert!(false, "Failed to parse") }
+        } else {
+            assert!(false, "Failed to parse")
+        }
 
-        let mut input = TestReadable([(1<<3)+2,2,0,1,(2<<3)+2,0,(3<<3)+2,0,(4<<3),4],0);
+        let mut input = TestReadable(
+            [
+                (1 << 3) + 2,
+                2,
+                0,
+                1,
+                (2 << 3) + 2,
+                0,
+                (3 << 3) + 2,
+                0,
+                (4 << 3),
+                4,
+            ],
+            0,
+        );
         let cell = core::cell::RefCell::new(0);
         let interp = SignDocInterp {
-            field_body_bytes: Action(Buffer::<5>, |a: ArrayVec<u8, 5>| { *cell.borrow_mut()+=a.len() as u64; Some(()) }),
+            field_body_bytes: Action(Buffer::<5>, |a: ArrayVec<u8, 5>| {
+                *cell.borrow_mut() += a.len() as u64;
+                Some(())
+            }),
             field_auth_info_bytes: DropInterp, // Action(Buffer::<5>, |_| Some(())),
             field_chain_id: Action(Buffer::<5>, |_| Some(())),
-            field_account_number: Action(DefaultInterp, |a| { *cell.borrow_mut()+=a; Some(()) })
+            field_account_number: Action(DefaultInterp, |a| {
+                *cell.borrow_mut() += a;
+                Some(())
+            }),
         };
         if let Poll::Ready(res) = poll_once(interp.parse(&mut input, 10)) {
             assert_eq!(res, ());
             assert_eq!(cell.into_inner(), 6);
-        } else { assert!(false, "Failed to parse") }
+        } else {
+            assert!(false, "Failed to parse")
+        }
 
-        let mut input = TestReadable([(1<<3)+2,2,0,1,(2<<3)+2,0,(3<<3)+2,0,(4<<3),4],0);
+        let mut input = TestReadable(
+            [
+                (1 << 3) + 2,
+                2,
+                0,
+                1,
+                (2 << 3) + 2,
+                0,
+                (3 << 3) + 2,
+                0,
+                (4 << 3),
+                4,
+            ],
+            0,
+        );
         let cell = core::cell::RefCell::new(0);
-        let interp = BytesAsMessage(SignDoc, SignDocInterp {
-            field_body_bytes: Action(Buffer::<5>, |a: ArrayVec<u8, 5>| { *cell.borrow_mut()+=a.len() as u64; Some(()) }),
-            field_auth_info_bytes: DropInterp, // Action(Buffer::<5>, |_| Some(())),
-            field_chain_id: Action(Buffer::<5>, |_| Some(())),
-            field_account_number: Action(DefaultInterp, |a| { *cell.borrow_mut()+=a; Some(()) })
-        });
+        let interp = BytesAsMessage(
+            SignDoc,
+            SignDocInterp {
+                field_body_bytes: Action(Buffer::<5>, |a: ArrayVec<u8, 5>| {
+                    *cell.borrow_mut() += a.len() as u64;
+                    Some(())
+                }),
+                field_auth_info_bytes: DropInterp, // Action(Buffer::<5>, |_| Some(())),
+                field_chain_id: Action(Buffer::<5>, |_| Some(())),
+                field_account_number: Action(DefaultInterp, |a| {
+                    *cell.borrow_mut() += a;
+                    Some(())
+                }),
+            },
+        );
         if let Poll::Ready(res) = poll_once(interp.parse(&mut input, 10)) {
             assert_eq!(res, ());
             assert_eq!(cell.into_inner(), 6);
-        } else { assert!(false, "Failed to parse") }
-
+        } else {
+            assert!(false, "Failed to parse")
+        }
 
         // Testing embedding of Message in Bytes field
-        let mut input = TestReadable([(1<<3)+2,2,2,0,(2<<3)+2,0,(3<<3)+2,0,(4<<3),4],0);
+        let mut input = TestReadable(
+            [
+                (1 << 3) + 2,
+                2,
+                2,
+                0,
+                (2 << 3) + 2,
+                0,
+                (3 << 3) + 2,
+                0,
+                (4 << 3),
+                4,
+            ],
+            0,
+        );
         let cell = core::cell::RefCell::new(0);
         let interp = SignDocInterp {
-            field_body_bytes:
-                 BytesAsMessage(OtherMessage, OtherMessageInterp { field_foo: Action(Buffer::<5>, |_| { *cell.borrow_mut()+=5; Some(()) }) }),
+            field_body_bytes: BytesAsMessage(
+                OtherMessage,
+                OtherMessageInterp {
+                    field_foo: Action(Buffer::<5>, |_| {
+                        *cell.borrow_mut() += 5;
+                        Some(())
+                    }),
+                },
+            ),
             field_auth_info_bytes: DropInterp, // Action(Buffer::<5>, |_| Some(())),
             field_chain_id: Action(Buffer::<5>, |_| Some(())),
-            field_account_number: Action(DefaultInterp, |a| { *cell.borrow_mut()+=a; Some(()) })
+            field_account_number: Action(DefaultInterp, |a| {
+                *cell.borrow_mut() += a;
+                Some(())
+            }),
         };
         if let Poll::Ready(res) = poll_once(interp.parse(&mut input, 10)) {
             assert_eq!(res, ());
             assert_eq!(cell.into_inner(), 9);
-        } else { assert!(false, "Failed to parse") }
+        } else {
+            assert!(false, "Failed to parse")
+        }
     }
 }
-
