@@ -91,6 +91,11 @@ jobs:
           repository: 'alamgu/ledger-nanos-sdk'
           ref: memory-fixes
           path: rsdk
+      - uses: arduino/setup-protoc@v1
+        with:
+          version: '3.x'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: echo "PROTO_INCLUDE=$(readlink -e $(dirname $(which protoc))/../include)" >> $GITHUB_ENV
       - name: Install clang
         run: sudo apt-get update && sudo apt install -y clang
       - uses: actions-rs/toolchain@v1
