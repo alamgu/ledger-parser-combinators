@@ -361,22 +361,32 @@ macro_rules! define_message {
                         {
                         // First, structural check:
                         let mut ii = input.clone();
+                        #[cfg(feature = "logging")]
                         info!("{} structural check", stringify!($name));
+                        #[cfg(feature = "logging")]
                         info!("ii size: {}", core::mem::size_of_val(&ii));
                         loop {
+                            #[cfg(feature = "logging")]
                             info!("{} structural field", stringify!($name));
                             // Probably should check for presence of all expected fields here as
                             // well. On the other hand, fields that we specify an interpretation
                             // for are _required_.
                             let tag : u32 = parse_varint(&mut ii).await;
+                            #[cfg(feature = "logging")]
                             info!("Field tag: {:X}", tag);
-                            let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => {error!("Wrong wire type {:X}", tag); reject_on(core::file!(),core::line!()).await} };
-                            info!("Field type: {:?}", wire);
+                            let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => {
+                                #[cfg(feature = "logging")]
+                                error!("Wrong wire type {:X}", tag);
+                                reject_on(core::file!(),core::line!()).await}
+                            };
+                            #[cfg(feature = "logging")]
+                            info!("FieldP type: {:?}", wire);
                             skip_field(wire, &mut ii).await;
                             if ii.index()-start_index == length {
                                 break;
                             }
                             if ii.index()-start_index > length {
+                                #[cfg(feature = "logging")]
                                 error!("Length too long");
                                 return reject_on(core::file!(),core::line!()).await;
                             }
@@ -397,6 +407,7 @@ macro_rules! define_message {
                                 trace!("Next field, tag: {} wire: {:?}", tag >> 3, wire);
                                 if tag >> 3 == $number {
                                     if wire != $schemaType::FORMAT {
+                                        #[cfg(feature = "logging")]
                                         error!("Format wrong for schema");
                                         return reject_on(core::file!(),core::line!()).await;
                                     }
@@ -422,6 +433,7 @@ macro_rules! define_message {
                                     break;
                                 }
                                 if ii.index()-start_index > length {
+                                    #[cfg(feature = "logging")]
                                     error!("Length too long");
                                     return reject_on(core::file!(),core::line!()).await;
                                 }
@@ -466,6 +478,7 @@ macro_rules! define_message {
                                 match tag >> 3 {
                                     $($number => {
                                     if wire != $schemaType::FORMAT {
+                                        #[cfg(feature = "logging")]
                                         error!("Format wrong for schema");
                                         return reject_on(core::file!(),core::line!()).await;
                                     }
@@ -490,6 +503,7 @@ macro_rules! define_message {
                                     break;
                                 }
                                 if input.index()-start > length {
+                                    #[cfg(feature = "logging")]
                                     error!("Length too long");
                                     return reject_on(core::file!(),core::line!()).await;
                                 }
