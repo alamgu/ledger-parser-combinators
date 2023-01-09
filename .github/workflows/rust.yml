@@ -6,8 +6,8 @@ on:
   pull_request:
     branches: [ main, develop ]
   workflow_dispatch:
-    inputs: 
-      name: 
+    inputs:
+      name:
         description: 'Manually triggered'
 
 env:
@@ -29,7 +29,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args: --manifest-path rust-app/Cargo.toml --all -- --check
+          args: --all -- --check
   clippy:
     runs-on: ubuntu-latest
     strategy:
@@ -64,7 +64,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --manifest-path rust-app/Cargo.toml -Z build-std=core -Z build-std-features=compiler-builtins-mem --target ./rsdk/${{ matrix.device }}.json
+          args: -Z build-std=core -Z build-std-features=compiler-builtins-mem --target ./rsdk/${{ matrix.device }}.json
   build:
     runs-on: ubuntu-latest
     strategy:
@@ -98,4 +98,4 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --manifest-path rust-app/Cargo.toml -Z build-std=core -Z build-std-features=compiler-builtins-mem --target ./rsdk/${{ matrix.device }}.json
+          args: -Z build-std=core -Z build-std-features=compiler-builtins-mem --target ./rsdk/${{ matrix.device }}.json
