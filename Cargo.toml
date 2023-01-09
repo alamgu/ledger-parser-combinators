@@ -6,7 +6,8 @@ members = [
 ]
 
 [patch.crates-io]
-nanos_sdk = { git = "https://github.com/alamgu/ledger-nanos-sdk", branch = "use-ambient-compiler-and-target" }
+nanos_sdk = { git = "https://github.com/alamgu/ledger-nanos-sdk", branch = "support-nix-or-non-nix-toolchain" }
 ledger-log = { git = "https://github.com/alamgu/ledger-log", branch = "patchable" }
 nanos_ui = { git = "https://github.com/obsidiansystems/ledger-nanos-ui", branch = "patchable" }
 enum-init = { git = "https://github.com/alamgu/enum-init" }
+trie-enum = { git = "https://github.com/alamgu/trie-enum" }
