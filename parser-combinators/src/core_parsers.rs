@@ -1,24 +1,20 @@
 use crate::endianness::Endianness;
 
+pub use crate::schema::*;
+
 // use generic_array::{ArrayLength, GenericArray};
 pub trait RV {
     type R;
 }
 
-#[derive(Default)]
-pub struct Byte;
 impl RV for Byte {
     type R = u8;
 }
 
-#[derive(Default)]
-pub struct Array<I, const N: usize>(pub I);
-
+/// Fixed-length array.
 impl<I: RV, const N: usize> RV for Array<I, N> {
     type R = [I::R; N];
 }
-
-pub struct DArray<N, I, const M: usize>(pub N, pub I);
 
 use arrayvec::ArrayVec;
 use core::convert::TryInto;
@@ -31,9 +27,6 @@ where
 
 macro_rules! number_parser {
     ($p:ident, $t:ty) => {
-        #[derive(Default)]
-        pub struct $p<const E: Endianness>;
-
         impl<const E: Endianness> RV for $p<E> {
             type R = $t;
         }
@@ -61,6 +54,8 @@ where
 //pub struct DArray<I, N>;
 //pub struct Table;
 
+/// LengthFallback; frame a subparser with a length byte.
 pub struct LengthFallback<N, S>(pub N, pub S);
 
+/// Alternative; schema is either A or B.
 pub struct Alt<A, B>(pub A, pub B);

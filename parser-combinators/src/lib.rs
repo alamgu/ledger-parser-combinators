@@ -1,5 +1,15 @@
 #![cfg_attr(target_family = "bolos", no_std)]
 #![allow(incomplete_features)]
+#![feature(future_poll_fn)]
+#![feature(min_specialization)]
+#![feature(generic_associated_types)]
+#![feature(auto_traits)]
+#![feature(negative_impls)]
+#![feature(trace_macros)]
+#![feature(log_syntax)]
+#![feature(pin_macro)]
+#![feature(type_alias_impl_trait)]
+#![feature(generic_const_exprs)]
 #![feature(cfg_version)]
 #![cfg_attr(
     all(target_family = "bolos", not(version("1.56"))),
@@ -18,6 +28,9 @@
 
 #[macro_use]
 extern crate enum_init;
+
+#[macro_use]
+extern crate num_derive;
 
 //#[cfg(all(not(target_os = "linux"), test))]
 //use nanos_sdk::exit_app;
@@ -58,9 +71,11 @@ pub mod core_parsers;
 
 // pub mod forward_parser;
 
-pub mod endianness;
-
 pub mod interp_parser;
 
 pub mod json;
 pub mod json_interp;
+
+pub mod async_parser;
+
+pub mod protobufs;

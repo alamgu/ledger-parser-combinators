@@ -2,9 +2,6 @@ use crate::core_parsers::*;
 use crate::endianness::{Convert, Endianness};
 use arrayvec::ArrayVec;
 
-#[cfg(feature = "logging")]
-use ledger_log::error;
-
 #[derive(PartialEq, Debug)]
 pub enum OOB {
     // Prompt removed due to excessive memory use; we gain testability improvements if we can

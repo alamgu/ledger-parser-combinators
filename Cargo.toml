@@ -1,39 +1,13 @@
-[package]
-name = "ledger-parser-combinators"
-version = "0.1.0"
-authors = ["Jonathan D.K. Gibbons <jonored@gmail.com>"]
-edition = "2018"
+[workspace]
+members = [
+  "parser-combinators",
+  "proto-gen",
+  "example"
+]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[profile.release]
-opt-level = 0
-[profile.dev]
-opt-level = 0
-
-[dependencies]
-
-arrayvec = { version = "0.7.1", default-features = false }
-generic-array = { version = "0.14.4", default-features = false }
-paste = "1.0"
-bstringify = "0.1.2"
+[patch.crates-io]
+nanos_sdk = { git = "https://github.com/alamgu/ledger-nanos-sdk", branch = "support-nix-or-non-nix-toolchain" }
+ledger-log = { git = "https://github.com/alamgu/ledger-log", branch = "patchable" }
+nanos_ui = { git = "https://github.com/obsidiansystems/ledger-nanos-ui", branch = "patchable" }
 enum-init = { git = "https://github.com/alamgu/enum-init" }
-
-[dependencies.ledger-log]
-git = "https://github.com/alamgu/ledger-log"
-features = ["log_trace"]
-optional = true
-
-[features]
-"logging" = [ "ledger-log" ]
-
-[target.'cfg(target_family = "bolos")'.dependencies.nanos_sdk]
-git = "https://github.com/LedgerHQ/ledger-nanos-sdk.git"
-features = [ "speculos" ]
-
-[target.'cfg(target_family = "bolos")'.dev-dependencies]
-testmacro = { git = "https://github.com/yhql/testmacro"}
-
-[patch."https://github.com/LedgerHQ/ledger-nanos-sdk.git".nanos_sdk]
-git = "https://github.com/alamgu/ledger-nanos-sdk.git"
-branch = "support-nix-or-non-nix-toolchain"
+trie-enum = { git = "https://github.com/alamgu/trie-enum" }
