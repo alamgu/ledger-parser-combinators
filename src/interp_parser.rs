@@ -1,5 +1,5 @@
 use crate::core_parsers::*;
-use crate::endianness::{Endianness, Convert};
+use crate::endianness::{Convert, Endianness};
 use arrayvec::ArrayVec;
 
 #[cfg(feature = "logging")]
@@ -12,7 +12,7 @@ pub enum OOB {
     // memory use.
     //
     // Prompt([ArrayString<128>;2]),
-    Reject
+    Reject,
 }
 
 // PResult stands for Partial Result
@@ -46,17 +46,29 @@ pub trait ParserCommon<P> {
     type Returning;
     fn init(&self) -> Self::State;
     fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
-        unsafe { (*state).as_mut_ptr().write(self.init()); }
+        unsafe {
+            (*state).as_mut_ptr().write(self.init());
+        }
     }
 }
 
 pub trait InterpParser<P>: ParserCommon<P> {
-    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a>;
+    fn parse<'a, 'b>(
+        &self,
+        state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a>;
 }
 
 pub trait DynParser<P>: ParserCommon<P> {
     type Parameter;
-    fn init_param(&self, params: Self::Parameter, state: &mut Self::State, destination: &mut Option<Self::Returning>);
+    fn init_param(
+        &self,
+        params: Self::Parameter,
+        state: &mut Self::State,
+        destination: &mut Option<Self::Returning>,
+    );
 }
 
 pub struct DefaultInterp;
@@ -87,12 +99,19 @@ pub fn call_me_maybe<F: FnOnce() -> Option<()>>(f: F) -> Option<()> {
 impl ParserCommon<Byte> for DefaultInterp {
     type State = ByteState;
     type Returning = u8;
-    fn init(&self) -> Self::State { Self::State {} }
+    fn init(&self) -> Self::State {
+        Self::State {}
+    }
 }
 
 impl InterpParser<Byte> for DefaultInterp {
     #[inline(never)]
-    fn parse<'a, 'b>(&self, _state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+    fn parse<'a, 'b>(
+        &self,
+        _state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a> {
         match chunk.split_first() {
             None => Err((None, chunk)),
             Some((first, rest)) => {
@@ -106,12 +125,19 @@ impl InterpParser<Byte> for DefaultInterp {
 impl ParserCommon<Byte> for DropInterp {
     type State = ();
     type Returning = ();
-    fn init(&self) -> Self::State { () }
+    fn init(&self) -> Self::State {
+        ()
+    }
 }
 
 impl InterpParser<Byte> for DropInterp {
     #[inline(never)]
-    fn parse<'a, 'b>(&self, _state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+    fn parse<'a, 'b>(
+        &self,
+        _state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a> {
         match chunk.split_first() {
             None => Err((None, chunk)),
             Some((_, rest)) => {
@@ -122,35 +148,52 @@ impl InterpParser<Byte> for DropInterp {
     }
 }
 
-pub struct ForwardArrayParserState<Item, SubparserState, const N : usize > {
+pub struct ForwardArrayParserState<Item, SubparserState, const N: usize> {
     buffer: ArrayVec<Item, N>,
     // We want to let our subparser stream into it
     subparser_destination: Option<Item>,
-    subparser_state: SubparserState
+    subparser_state: SubparserState,
 }
-
 
 /* Note: we use this for parsing numbers. Additional requirement: don't stream into destination,
  * because number parser will be recreating destination each time. */
-impl<I, S : ParserCommon<I>, const N : usize> ParserCommon<Array< I, N>> for SubInterp<S> {
-    type State = ForwardArrayParserState<<S as ParserCommon<I>>::Returning, <S as ParserCommon<I>>::State, N>;
+impl<I, S: ParserCommon<I>, const N: usize> ParserCommon<Array<I, N>> for SubInterp<S> {
+    type State = ForwardArrayParserState<
+        <S as ParserCommon<I>>::Returning,
+        <S as ParserCommon<I>>::State,
+        N,
+    >;
     type Returning = [<S as ParserCommon<I>>::Returning; N];
     fn init(&self) -> Self::State {
-        Self::State { buffer: ArrayVec::<<S as ParserCommon<I>>::Returning,N>::new(),
-                      subparser_destination: None,
-                      subparser_state: <S as ParserCommon<I>>::init(&self.0) }
+        Self::State {
+            buffer: ArrayVec::<<S as ParserCommon<I>>::Returning, N>::new(),
+            subparser_destination: None,
+            subparser_state: <S as ParserCommon<I>>::init(&self.0),
+        }
     }
 }
 
-impl<I, S : InterpParser<I>, const N : usize> InterpParser<Array< I, N>> for SubInterp<S> {
+impl<I, S: InterpParser<I>, const N: usize> InterpParser<Array<I, N>> for SubInterp<S> {
     #[inline(never)]
-    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
-        let mut remaining : &'a [u8] = chunk;
+    fn parse<'a, 'b>(
+        &self,
+        state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a> {
+        let mut remaining: &'a [u8] = chunk;
         while !state.buffer.is_full() {
-            match self.0.parse(&mut state.subparser_state, remaining, &mut state.subparser_destination)? {
+            match self.0.parse(
+                &mut state.subparser_state,
+                remaining,
+                &mut state.subparser_destination,
+            )? {
                 new_chunk => {
                     remaining = new_chunk;
-                    state.buffer.push(core::mem::take(&mut state.subparser_destination).ok_or((Some(OOB::Reject), remaining))?);
+                    state.buffer.push(
+                        core::mem::take(&mut state.subparser_destination)
+                            .ok_or((Some(OOB::Reject), remaining))?,
+                    );
                     state.subparser_state = <S as ParserCommon<I>>::init(&self.0);
                 }
             }
@@ -160,26 +203,44 @@ impl<I, S : InterpParser<I>, const N : usize> InterpParser<Array< I, N>> for Sub
                 *destination = Some(rv);
                 Ok(remaining)
             }
-            Err(_) => Err((Some(OOB::Reject), remaining)) // Should be impossible, could just panic.
+            Err(_) => Err((Some(OOB::Reject), remaining)), // Should be impossible, could just panic.
         }
     }
 }
 
 macro_rules! number_parser {
     ($p:ident, $size:expr) => {
-        impl<const E: Endianness> ParserCommon<$p<E>> for DefaultInterp where <$p<E> as RV>::R : Convert<E> {
+        impl<const E: Endianness> ParserCommon<$p<E>> for DefaultInterp
+        where
+            <$p<E> as RV>::R: Convert<E>,
+        {
             type State = <DefaultInterp as ParserCommon<Array<Byte, $size>>>::State;
             type Returning = <$p<E> as RV>::R;
             fn init(&self) -> Self::State {
                 <DefaultInterp as ParserCommon<Array<Byte, $size>>>::init(&DefaultInterp)
             }
         }
-        impl<const E: Endianness> InterpParser<$p<E>> for DefaultInterp where <$p<E> as RV>::R : Convert<E> {
+        impl<const E: Endianness> InterpParser<$p<E>> for DefaultInterp
+        where
+            <$p<E> as RV>::R: Convert<E>,
+        {
             #[inline(never)]
-            fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
-                let mut sub_destination : Option<[u8; $size]> = None;
-                let remainder = <DefaultInterp as InterpParser<Array<Byte, $size>>>::parse(&DefaultInterp, state, chunk, &mut sub_destination)?;
-                *destination = Some(Convert::<E>::deserialize((sub_destination.ok_or((Some(OOB::Reject), remainder))?)));
+            fn parse<'a, 'b>(
+                &self,
+                state: &'b mut Self::State,
+                chunk: &'a [u8],
+                destination: &mut Option<Self::Returning>,
+            ) -> ParseResult<'a> {
+                let mut sub_destination: Option<[u8; $size]> = None;
+                let remainder = <DefaultInterp as InterpParser<Array<Byte, $size>>>::parse(
+                    &DefaultInterp,
+                    state,
+                    chunk,
+                    &mut sub_destination,
+                )?;
+                *destination = Some(Convert::<E>::deserialize(
+                    (sub_destination.ok_or((Some(OOB::Reject), remainder))?),
+                ));
                 Ok(remainder)
             }
         }
@@ -187,97 +248,156 @@ macro_rules! number_parser {
             type State = <SubInterp<DropInterp> as ParserCommon<Array<Byte, $size>>>::State;
             type Returning = ();
             fn init(&self) -> Self::State {
-                <SubInterp<DropInterp> as ParserCommon<Array<Byte, $size>>>::init(&SubInterp(DropInterp))
+                <SubInterp<DropInterp> as ParserCommon<Array<Byte, $size>>>::init(&SubInterp(
+                    DropInterp,
+                ))
             }
         }
         impl<const E: Endianness> InterpParser<$p<E>> for DropInterp {
             #[inline(never)]
-            fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
-                let mut sub_destination : Option<[(); $size]> = None;
-                let remainder = <SubInterp<DropInterp> as InterpParser<Array<Byte, $size>>>::parse(&SubInterp(DropInterp), state, chunk, &mut sub_destination)?;
+            fn parse<'a, 'b>(
+                &self,
+                state: &'b mut Self::State,
+                chunk: &'a [u8],
+                destination: &mut Option<Self::Returning>,
+            ) -> ParseResult<'a> {
+                let mut sub_destination: Option<[(); $size]> = None;
+                let remainder = <SubInterp<DropInterp> as InterpParser<Array<Byte, $size>>>::parse(
+                    &SubInterp(DropInterp),
+                    state,
+                    chunk,
+                    &mut sub_destination,
+                )?;
                 *destination = Some(());
                 return Ok(remainder);
             }
         }
-    }
+    };
 }
 number_parser! { U16, 2 }
 number_parser! { U32, 4 }
 number_parser! { U64, 8 }
 
-pub enum ForwardDArrayParserState<N, IS, I, const M : usize > {
+pub enum ForwardDArrayParserState<N, IS, I, const M: usize> {
     Length(N),
     Elements(ArrayVec<I, M>, usize, IS, Option<I>),
-    Done
+    Done,
 }
 
 use core::convert::TryFrom;
-impl<N, I, S : ParserCommon<I>, const M : usize> ParserCommon<DArray<N, I, M> > for SubInterp<S> where
-    DefaultInterp : ParserCommon<N>,
+impl<N, I, S: ParserCommon<I>, const M: usize> ParserCommon<DArray<N, I, M>> for SubInterp<S>
+where
+    DefaultInterp: ParserCommon<N>,
     usize: TryFrom<<DefaultInterp as ParserCommon<N>>::Returning>,
-    <S as ParserCommon<I>>::Returning: Clone{
-    type State=ForwardDArrayParserState<<DefaultInterp as ParserCommon<N>>::State, <S as ParserCommon<I>>::State, <S as ParserCommon<I>>::Returning, M>;
+    <S as ParserCommon<I>>::Returning: Clone,
+{
+    type State = ForwardDArrayParserState<
+        <DefaultInterp as ParserCommon<N>>::State,
+        <S as ParserCommon<I>>::State,
+        <S as ParserCommon<I>>::Returning,
+        M,
+    >;
     type Returning = ArrayVec<<S as ParserCommon<I>>::Returning, M>;
     fn init(&self) -> Self::State {
         Self::State::Length(<DefaultInterp as ParserCommon<N>>::init(&DefaultInterp))
     }
 }
 
-impl<N, I, S : InterpParser<I>, const M : usize> InterpParser<DArray<N, I, M> > for SubInterp<S> where
-    DefaultInterp : InterpParser<N>,
+impl<N, I, S: InterpParser<I>, const M: usize> InterpParser<DArray<N, I, M>> for SubInterp<S>
+where
+    DefaultInterp: InterpParser<N>,
     usize: TryFrom<<DefaultInterp as ParserCommon<N>>::Returning>,
-    <S as ParserCommon<I>>::Returning: Clone{
+    <S as ParserCommon<I>>::Returning: Clone,
+{
     #[inline(never)]
-    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+    fn parse<'a, 'b>(
+        &self,
+        state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a> {
         use ForwardDArrayParserState::*;
-        let mut cursor : &'a [u8] = chunk;
+        let mut cursor: &'a [u8] = chunk;
         loop {
             match state {
                 Length(ref mut nstate) => {
-                    let mut sub_destination : Option<<DefaultInterp as ParserCommon<N>>::Returning> = None;
-                    let newcur : &'a [u8] = <DefaultInterp as InterpParser<N>>::parse(&DefaultInterp, nstate, chunk, &mut sub_destination)?;
+                    let mut sub_destination: Option<<DefaultInterp as ParserCommon<N>>::Returning> =
+                        None;
+                    let newcur: &'a [u8] = <DefaultInterp as InterpParser<N>>::parse(
+                        &DefaultInterp,
+                        nstate,
+                        chunk,
+                        &mut sub_destination,
+                    )?;
                     let len_temp = sub_destination.ok_or((Some(OOB::Reject), newcur))?;
                     cursor = newcur;
                     let len = <usize as TryFrom<<DefaultInterp as ParserCommon<N>>::Returning>>::try_from(len_temp).or(Err((Some(OOB::Reject), newcur)))?;
-                    set_from_thunk(state, || Elements(ArrayVec::new(), len, <S as ParserCommon<I>>::init(&self.0), None));
+                    set_from_thunk(state, || {
+                        Elements(
+                            ArrayVec::new(),
+                            len,
+                            <S as ParserCommon<I>>::init(&self.0),
+                            None,
+                        )
+                    });
                 }
                 Elements(ref mut vec, len, ref mut istate, ref mut sub_destination) => {
                     while vec.len() < *len {
                         cursor = self.0.parse(istate, cursor, sub_destination)?;
-                        vec.try_push(core::mem::take(sub_destination).ok_or((Some(OOB::Reject), cursor))?).or(Err((Some(OOB::Reject), cursor)))?;
+                        vec.try_push(
+                            core::mem::take(sub_destination).ok_or((Some(OOB::Reject), cursor))?,
+                        )
+                        .or(Err((Some(OOB::Reject), cursor)))?;
                         *istate = <S as ParserCommon<I>>::init(&self.0);
                     }
-                    *destination = match core::mem::replace(state, Done) { Elements(vec, _, _, _) => Some(vec), _ => break Err((Some(OOB::Reject), cursor)), };
+                    *destination = match core::mem::replace(state, Done) {
+                        Elements(vec, _, _, _) => Some(vec),
+                        _ => break Err((Some(OOB::Reject), cursor)),
+                    };
                     break Ok(cursor);
                 }
-                Done => { break Err((Some(OOB::Reject), cursor)); }
+                Done => {
+                    break Err((Some(OOB::Reject), cursor));
+                }
             }
         }
     }
 }
 
-
-impl< I, const N : usize >  ParserCommon<Array<I, N>> for DefaultInterp where
-    DefaultInterp : ParserCommon<I> {
-    type State = <SubInterp<DefaultInterp> as ParserCommon<Array< I, N> >>::State;
-    type Returning = <SubInterp<DefaultInterp> as ParserCommon<Array< I, N> >>::Returning;
+impl<I, const N: usize> ParserCommon<Array<I, N>> for DefaultInterp
+where
+    DefaultInterp: ParserCommon<I>,
+{
+    type State = <SubInterp<DefaultInterp> as ParserCommon<Array<I, N>>>::State;
+    type Returning = <SubInterp<DefaultInterp> as ParserCommon<Array<I, N>>>::Returning;
     fn init(&self) -> Self::State {
         <SubInterp<DefaultInterp> as ParserCommon<Array<I, N>>>::init(&SubInterp(DefaultInterp))
     }
 }
 
-impl< I, const N : usize >  InterpParser<Array<I, N>> for DefaultInterp where
-    DefaultInterp : InterpParser<I> {
+impl<I, const N: usize> InterpParser<Array<I, N>> for DefaultInterp
+where
+    DefaultInterp: InterpParser<I>,
+{
     #[inline(never)]
-    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
-        <SubInterp<DefaultInterp> as InterpParser<Array<I, N>>>::parse(&SubInterp(DefaultInterp), state, chunk, destination)
+    fn parse<'a, 'b>(
+        &self,
+        state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a> {
+        <SubInterp<DefaultInterp> as InterpParser<Array<I, N>>>::parse(
+            &SubInterp(DefaultInterp),
+            state,
+            chunk,
+            destination,
+        )
     }
 }
 
-
 /* // TODO: determine why this doesn't work.
 impl< N, I, const M : usize> InterpParser<DArray<N, I, M>> for DefaultInterp where
-    DefaultInterp : InterpParser<I> + InterpParser<N>, 
+    DefaultInterp : InterpParser<I> + InterpParser<N>,
     usize: From<<DefaultInterp as InterpParser<N>>::Returning> {
     type State = <SubInterp<DefaultInterp> as InterpParser<DArray< N, I, M> > >::State;
     type Returning = <SubInterp<DefaultInterp> as InterpParser<DArray< N, I, M> > >::Returning;
@@ -298,9 +418,13 @@ impl< N, I, const M : usize> InterpParser<DArray<N, I, M>> for DefaultInterp whe
 #[derive(Clone)]
 pub struct Action<S, F>(pub S, pub F);
 
-impl<A, R, S : ParserCommon<A>> ParserCommon<A> for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
+impl<A, R, S: ParserCommon<A>> ParserCommon<A>
+    for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
 {
-    type State = (<S as ParserCommon<A> >::State, Option<<S as ParserCommon<A> >::Returning>);
+    type State = (
+        <S as ParserCommon<A>>::State,
+        Option<<S as ParserCommon<A>>::Returning>,
+    );
     type Returning = R;
 
     // #[inline(never)] // Causes stack size increase
@@ -310,42 +434,68 @@ impl<A, R, S : ParserCommon<A>> ParserCommon<A> for Action<S, fn(&<S as ParserCo
 
     #[inline(never)]
     fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
-       self.0.init_in_place(unsafe { core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).0) as *mut core::mem::MaybeUninit<<S as ParserCommon<A> >::State> });
-       call_fn( || unsafe { (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).1) as *mut Option<<S as ParserCommon<A> >::Returning> ).write(None)} );
+        self.0.init_in_place(unsafe {
+            core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).0)
+                as *mut core::mem::MaybeUninit<<S as ParserCommon<A>>::State>
+        });
+        call_fn(|| unsafe {
+            (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).1)
+                as *mut Option<<S as ParserCommon<A>>::Returning>)
+                .write(None)
+        });
     }
 }
 
-impl<A, R, S : InterpParser<A>> InterpParser<A> for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
+impl<A, R, S: InterpParser<A>> InterpParser<A>
+    for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
 {
     #[inline(never)]
-    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+    fn parse<'a, 'b>(
+        &self,
+        state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a> {
         let new_chunk = self.0.parse(&mut state.0, chunk, &mut state.1)?;
-        match (self.1)(state.1.as_ref().ok_or((Some(OOB::Reject),new_chunk))?, destination) {
-            None => { Err((Some(OOB::Reject),new_chunk)) }
-            Some(()) => { Ok(new_chunk) }
+        match (self.1)(
+            state.1.as_ref().ok_or((Some(OOB::Reject), new_chunk))?,
+            destination,
+        ) {
+            None => Err((Some(OOB::Reject), new_chunk)),
+            Some(()) => Ok(new_chunk),
         }
     }
 }
 
-impl<A, R, S : DynParser<A>> DynParser<A> for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
-    {
-        type Parameter = S::Parameter;
-        #[inline(never)]
-        fn init_param(&self, param: Self::Parameter, state: &mut Self::State, _destination: &mut Option<Self::Returning>) {
-            set_from_thunk(&mut state.0, || <S as ParserCommon<A>>::init(&self.0));
-            set_from_thunk(&mut state.1, || None);
-            self.0.init_param(param, &mut state.0, &mut state.1);
-        }
+impl<A, R, S: DynParser<A>> DynParser<A>
+    for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
+{
+    type Parameter = S::Parameter;
+    #[inline(never)]
+    fn init_param(
+        &self,
+        param: Self::Parameter,
+        state: &mut Self::State,
+        _destination: &mut Option<Self::Returning>,
+    ) {
+        set_from_thunk(&mut state.0, || <S as ParserCommon<A>>::init(&self.0));
+        set_from_thunk(&mut state.1, || None);
+        self.0.init_param(param, &mut state.0, &mut state.1);
     }
+}
 
 /* This impl exists to allow the _function_ of an Action to be the target of the parameter for
  * DynParser, thus giving an escape hatch to thread a parameter past a non-parameterized
  * parser. Whether this should still be an Action as opposed to some other name is not immediately
  * clear. */
-impl<A, R, S : ParserCommon<A>, C> ParserCommon<A> for Action<S, fn(&<S as
-    ParserCommon<A>>::Returning, &mut Option<R>, C) -> Option<()>>
+impl<A, R, S: ParserCommon<A>, C> ParserCommon<A>
+    for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>, C) -> Option<()>>
 {
-    type State = (<S as ParserCommon<A> >::State, Option<<S as ParserCommon<A> >::Returning>, Option<C>);
+    type State = (
+        <S as ParserCommon<A>>::State,
+        Option<<S as ParserCommon<A>>::Returning>,
+        Option<C>,
+    );
     type Returning = R;
 
     #[inline(never)]
@@ -355,42 +505,71 @@ impl<A, R, S : ParserCommon<A>, C> ParserCommon<A> for Action<S, fn(&<S as
 
     #[inline(never)]
     fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
-       self.0.init_in_place(unsafe { core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).0) as *mut core::mem::MaybeUninit<<S as ParserCommon<A> >::State> });
-       call_fn( || unsafe { (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).1) as *mut Option<<S as ParserCommon<A> >::Returning> ).write(None)} );
-       call_fn( || unsafe { (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).2) as *mut Option<C> ).write(None)} );
+        self.0.init_in_place(unsafe {
+            core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).0)
+                as *mut core::mem::MaybeUninit<<S as ParserCommon<A>>::State>
+        });
+        call_fn(|| unsafe {
+            (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).1)
+                as *mut Option<<S as ParserCommon<A>>::Returning>)
+                .write(None)
+        });
+        call_fn(|| unsafe {
+            (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).2) as *mut Option<C>).write(None)
+        });
     }
 }
 
-impl<A, R, S : InterpParser<A>, C> InterpParser<A> for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>, C) -> Option<()>>
+impl<A, R, S: InterpParser<A>, C> InterpParser<A>
+    for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>, C) -> Option<()>>
 {
     #[inline(never)]
-    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+    fn parse<'a, 'b>(
+        &self,
+        state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a> {
         let new_chunk = self.0.parse(&mut state.0, chunk, &mut state.1)?;
-        match (self.1)(state.1.as_ref().ok_or((Some(OOB::Reject),new_chunk))?, destination, core::mem::take(&mut state.2).ok_or((Some(OOB::Reject),new_chunk))?) {
-            None => { Err((Some(OOB::Reject),new_chunk)) }
-            Some(()) => { Ok(new_chunk) }
+        match (self.1)(
+            state.1.as_ref().ok_or((Some(OOB::Reject), new_chunk))?,
+            destination,
+            core::mem::take(&mut state.2).ok_or((Some(OOB::Reject), new_chunk))?,
+        ) {
+            None => Err((Some(OOB::Reject), new_chunk)),
+            Some(()) => Ok(new_chunk),
         }
     }
 }
 
-impl<A, R, S : ParserCommon<A>, C> DynParser<A> for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>, C) -> Option<()>>
-    {
-        type Parameter = C;
-        #[inline(never)]
-        fn init_param(&self, param: Self::Parameter, state: &mut Self::State, _destination: &mut Option<Self::Returning>) {
-            set_from_thunk(&mut state.0, || <S as ParserCommon<A>>::init(&self.0));
-            set_from_thunk(&mut state.1, || None);
-            set_from_thunk(&mut state.2, || Some(param));
-        }
+impl<A, R, S: ParserCommon<A>, C> DynParser<A>
+    for Action<S, fn(&<S as ParserCommon<A>>::Returning, &mut Option<R>, C) -> Option<()>>
+{
+    type Parameter = C;
+    #[inline(never)]
+    fn init_param(
+        &self,
+        param: Self::Parameter,
+        state: &mut Self::State,
+        _destination: &mut Option<Self::Returning>,
+    ) {
+        set_from_thunk(&mut state.0, || <S as ParserCommon<A>>::init(&self.0));
+        set_from_thunk(&mut state.1, || None);
+        set_from_thunk(&mut state.2, || Some(param));
     }
+}
 
 /* A MoveAction is the same as an Action with the distinction that it takes it's argument via Move,
  * thus enabling it to work with types that do not have Copy or Clone and have nontrivial semantics
  * involving Drop. */
 pub struct MoveAction<S, F>(pub S, pub F);
-impl<A, R, S : ParserCommon<A>> ParserCommon<A> for MoveAction<S, fn(<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
+impl<A, R, S: ParserCommon<A>> ParserCommon<A>
+    for MoveAction<S, fn(<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
 {
-    type State = (<S as ParserCommon<A> >::State, Option<<S as ParserCommon<A> >::Returning>);
+    type State = (
+        <S as ParserCommon<A>>::State,
+        Option<<S as ParserCommon<A>>::Returning>,
+    );
     type Returning = R;
 
     #[inline(never)]
@@ -400,33 +579,55 @@ impl<A, R, S : ParserCommon<A>> ParserCommon<A> for MoveAction<S, fn(<S as Parse
 
     #[inline(never)]
     fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
-       self.0.init_in_place(unsafe { core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).0) as *mut core::mem::MaybeUninit<<S as ParserCommon<A> >::State> });
-       call_fn( || unsafe { (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).1) as *mut Option<<S as ParserCommon<A> >::Returning> ).write(None)} );
+        self.0.init_in_place(unsafe {
+            core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).0)
+                as *mut core::mem::MaybeUninit<<S as ParserCommon<A>>::State>
+        });
+        call_fn(|| unsafe {
+            (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).1)
+                as *mut Option<<S as ParserCommon<A>>::Returning>)
+                .write(None)
+        });
     }
 }
 
-impl<A, R, S : InterpParser<A>> InterpParser<A> for MoveAction<S, fn(<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
+impl<A, R, S: InterpParser<A>> InterpParser<A>
+    for MoveAction<S, fn(<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
 {
     #[inline(never)]
-    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+    fn parse<'a, 'b>(
+        &self,
+        state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a> {
         let new_chunk = self.0.parse(&mut state.0, chunk, &mut state.1)?;
-        match (self.1)(core::mem::take(&mut state.1).ok_or((Some(OOB::Reject),new_chunk))?, destination) {
-            None => { Err((Some(OOB::Reject),new_chunk)) }
-            Some(()) => { Ok(new_chunk) }
+        match (self.1)(
+            core::mem::take(&mut state.1).ok_or((Some(OOB::Reject), new_chunk))?,
+            destination,
+        ) {
+            None => Err((Some(OOB::Reject), new_chunk)),
+            Some(()) => Ok(new_chunk),
         }
     }
 }
 
-impl<A, R, S : DynParser<A>> DynParser<A> for MoveAction<S, fn(<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
-    {
-        type Parameter = S::Parameter;
-        #[inline(never)]
-        fn init_param(&self, param: Self::Parameter, state: &mut Self::State, _destination: &mut Option<Self::Returning>) {
-            set_from_thunk(&mut state.0, || <S as ParserCommon<A>>::init(&self.0));
-            set_from_thunk(&mut state.1, || None);
-            self.0.init_param(param, &mut state.0, &mut state.1);
-        }
+impl<A, R, S: DynParser<A>> DynParser<A>
+    for MoveAction<S, fn(<S as ParserCommon<A>>::Returning, &mut Option<R>) -> Option<()>>
+{
+    type Parameter = S::Parameter;
+    #[inline(never)]
+    fn init_param(
+        &self,
+        param: Self::Parameter,
+        state: &mut Self::State,
+        _destination: &mut Option<Self::Returning>,
+    ) {
+        set_from_thunk(&mut state.0, || <S as ParserCommon<A>>::init(&self.0));
+        set_from_thunk(&mut state.1, || None);
+        self.0.init_param(param, &mut state.0, &mut state.1);
     }
+}
 
 fn rej<'a>(cnk: &'a [u8]) -> (PResult<OOB>, RemainingSlice<'a>) {
     (Some(OOB::Reject), cnk)
@@ -438,20 +639,29 @@ impl<A, S: ParserCommon<A>> ParserCommon<A> for Preaction<S> {
     type State = Option<<S as ParserCommon<A>>::State>;
     type Returning = <S as ParserCommon<A>>::Returning;
 
-    fn init(&self) -> Self::State { None }
+    fn init(&self) -> Self::State {
+        None
+    }
 }
 
 impl<A, S: InterpParser<A>> InterpParser<A> for Preaction<S> {
     #[inline(never)]
-    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
-        loop { break match state {
-            None => {
-                (self.0)().ok_or((Some(OOB::Reject), chunk))?;
-                set_from_thunk(state, || Some(<S as ParserCommon<A>>::init(&self.1)));
-                continue;
-            }
-            Some(ref mut s) => <S as InterpParser<A>>::parse(&self.1, s, chunk, destination)
-        }}
+    fn parse<'a, 'b>(
+        &self,
+        state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a> {
+        loop {
+            break match state {
+                None => {
+                    (self.0)().ok_or((Some(OOB::Reject), chunk))?;
+                    set_from_thunk(state, || Some(<S as ParserCommon<A>>::init(&self.1)));
+                    continue;
+                }
+                Some(ref mut s) => <S as InterpParser<A>>::parse(&self.1, s, chunk, destination),
+            };
+        }
     }
 }
 
@@ -464,29 +674,44 @@ pub struct Bind<S, F>(pub S, pub F);
 // After the first subparser runs, if it failed, then the whole bind parser will fail
 // but if it succeeds, then the parser state transitions to BindSecond.
 #[derive(InPlaceInit)]
-pub enum BindState<A,B,S:ParserCommon<A>,T:ParserCommon<B>> {
-    BindFirst(S::State, Option<<S as ParserCommon<A> >::Returning>),
-    BindSecond(T, <T as ParserCommon<B>>::State)
+pub enum BindState<A, B, S: ParserCommon<A>, T: ParserCommon<B>> {
+    BindFirst(S::State, Option<<S as ParserCommon<A>>::Returning>),
+    BindSecond(T, <T as ParserCommon<B>>::State),
 }
 
-impl<A, B, S : ParserCommon<A>, T : ParserCommon<B>> ParserCommon<(A,B)> for Bind<S, fn(&<S as ParserCommon<A>>::Returning) -> Option<T>>
+impl<A, B, S: ParserCommon<A>, T: ParserCommon<B>> ParserCommon<(A, B)>
+    for Bind<S, fn(&<S as ParserCommon<A>>::Returning) -> Option<T>>
 {
-    type State = BindState<A,B,S,T>;
+    type State = BindState<A, B, S, T>;
     type Returning = <T as ParserCommon<B>>::Returning;
     #[inline(never)]
     fn init(&self) -> Self::State {
         use BindState::*;
-        BindFirst (<S as ParserCommon<A>>::init(&self.0), None)
+        BindFirst(<S as ParserCommon<A>>::init(&self.0), None)
     }
     fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
-        Self::State::init_bind_first(state, |a| <S as ParserCommon<A>>::init_in_place(&self.0, a), |b| call_fn( || unsafe { (*b).as_mut_ptr().write(None); }));
+        Self::State::init_bind_first(
+            state,
+            |a| <S as ParserCommon<A>>::init_in_place(&self.0, a),
+            |b| {
+                call_fn(|| unsafe {
+                    (*b).as_mut_ptr().write(None);
+                })
+            },
+        );
     }
 }
 
-impl<A, B, S : InterpParser<A>, T : InterpParser<B>> InterpParser<(A,B)> for Bind<S, fn(&<S as ParserCommon<A>>::Returning) -> Option<T>>
+impl<A, B, S: InterpParser<A>, T: InterpParser<B>> InterpParser<(A, B)>
+    for Bind<S, fn(&<S as ParserCommon<A>>::Returning) -> Option<T>>
 {
     #[inline(never)]
-    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+    fn parse<'a, 'b>(
+        &self,
+        state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a> {
         use BindState::*;
         let mut cursor = chunk;
         loop {
@@ -499,7 +724,8 @@ impl<A, B, S : InterpParser<A>, T : InterpParser<B>> InterpParser<(A,B)> for Bin
                         let next_state = next.init();
                         *state = BindSecond(next, next_state);
                         Some(())
-                    }).ok_or((Some(OOB::Reject), cursor))?;
+                    })
+                    .ok_or((Some(OOB::Reject), cursor))?;
                 }
                 BindSecond(t, ref mut s) => {
                     cursor = t.parse(s, cursor, destination)?;
@@ -515,9 +741,9 @@ pub struct DynBind<S, F>(pub S, pub F);
 
 #[derive(InPlaceInit)]
 #[repr(u8)]
-pub enum DynBindState<A,B,S:ParserCommon<A>,T:ParserCommon<B>> {
-    BindFirst(S::State, Option<<S as ParserCommon<A> >::Returning>),
-    BindSecond(<T as ParserCommon<B>>::State)
+pub enum DynBindState<A, B, S: ParserCommon<A>, T: ParserCommon<B>> {
+    BindFirst(S::State, Option<<S as ParserCommon<A>>::Returning>),
+    BindSecond(<T as ParserCommon<B>>::State),
 }
 
 #[inline(never)]
@@ -525,26 +751,41 @@ fn call_fn(f: impl FnOnce()) {
     f()
 }
 
-impl<A, B, S : ParserCommon<A>, T : DynParser<B, Parameter = S::Returning>> ParserCommon<(A,B)> for DynBind<S, T>
+impl<A, B, S: ParserCommon<A>, T: DynParser<B, Parameter = S::Returning>> ParserCommon<(A, B)>
+    for DynBind<S, T>
 // fn(&<S as InterpParser<A>>::Returning) -> Option<T>>
 {
-    type State = DynBindState<A,B,S,T>;
+    type State = DynBindState<A, B, S, T>;
     type Returning = <T as ParserCommon<B>>::Returning;
     #[inline(never)]
     fn init(&self) -> Self::State {
         use DynBindState::*;
-        BindFirst (<S as ParserCommon<A>>::init(&self.0), None)
+        BindFirst(<S as ParserCommon<A>>::init(&self.0), None)
     }
     #[inline(never)]
     fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
-        Self::State::init_bind_first(state, |a| call_fn(|| <S as ParserCommon<A>>::init_in_place(&self.0, a)), |b| call_fn(|| unsafe { (*b).as_mut_ptr().write(None); }));
+        Self::State::init_bind_first(
+            state,
+            |a| call_fn(|| <S as ParserCommon<A>>::init_in_place(&self.0, a)),
+            |b| {
+                call_fn(|| unsafe {
+                    (*b).as_mut_ptr().write(None);
+                })
+            },
+        );
     }
 }
 
-impl<A, B, S : InterpParser<A>, T : DynParser<B, Parameter = S::Returning> + InterpParser<B>> InterpParser<(A,B)> for DynBind<S, T>
+impl<A, B, S: InterpParser<A>, T: DynParser<B, Parameter = S::Returning> + InterpParser<B>>
+    InterpParser<(A, B)> for DynBind<S, T>
 {
     #[inline(never)]
-    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+    fn parse<'a, 'b>(
+        &self,
+        state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a> {
         use DynBindState::*;
         let mut cursor = chunk;
         loop {
@@ -558,14 +799,18 @@ impl<A, B, S : InterpParser<A>, T : DynParser<B, Parameter = S::Returning> + Int
                         } else {
                             unreachable!();
                         }
-                        Self::State::init_bind_second(unsafe { core::mem::transmute(state as *mut Self::State) }, |a| call_fn(|| self.1.init_in_place(a)));
+                        Self::State::init_bind_second(
+                            unsafe { core::mem::transmute(state as *mut Self::State) },
+                            |a| call_fn(|| self.1.init_in_place(a)),
+                        );
                         if let BindSecond(ref mut s) = state {
                             self.1.init_param(r_temp, s, destination);
                         } else {
                             unreachable!();
                         }
                         Some(())
-                    }).ok_or((Some(OOB::Reject), cursor))?;
+                    })
+                    .ok_or((Some(OOB::Reject), cursor))?;
                 }
                 BindSecond(ref mut s) => {
                     cursor = self.1.parse(s, cursor, destination)?;
@@ -576,23 +821,32 @@ impl<A, B, S : InterpParser<A>, T : DynParser<B, Parameter = S::Returning> + Int
     }
 }
 
-impl<A, B, S: DynParser<A>, T: DynParser<B, Parameter = S::Returning>> DynParser<(A,B)> for DynBind<S, T>
-    {
-        type Parameter = S::Parameter;
-        #[inline(never)]
-        fn init_param(&self, param: Self::Parameter, state: &mut Self::State, _destination: &mut Option<Self::Returning>) {
-            self.init_in_place(unsafe { core::mem::transmute(state as *mut Self::State) });
-            match state {
-                DynBindState::BindFirst(ref mut s, ref mut sub_destination) => self.0.init_param(param, s, sub_destination),
-                _ => unreachable!(),
+impl<A, B, S: DynParser<A>, T: DynParser<B, Parameter = S::Returning>> DynParser<(A, B)>
+    for DynBind<S, T>
+{
+    type Parameter = S::Parameter;
+    #[inline(never)]
+    fn init_param(
+        &self,
+        param: Self::Parameter,
+        state: &mut Self::State,
+        _destination: &mut Option<Self::Returning>,
+    ) {
+        self.init_in_place(unsafe { core::mem::transmute(state as *mut Self::State) });
+        match state {
+            DynBindState::BindFirst(ref mut s, ref mut sub_destination) => {
+                self.0.init_param(param, s, sub_destination)
             }
+            _ => unreachable!(),
         }
     }
+}
 
 #[derive(Clone)]
 pub struct ObserveBytes<X, F, S>(pub fn() -> X, pub F, pub S);
 
-impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : ParserCommon<A>> ParserCommon<A> for ObserveBytes<X, F, S>
+impl<A, X: Clone, F: Fn(&mut X, &[u8]) -> (), S: ParserCommon<A>> ParserCommon<A>
+    for ObserveBytes<X, F, S>
 {
     type State = Option<<S as ParserCommon<A>>::State>;
     // Making a compromise here; if we return our sub-parser's result still wrapped in Option, we
@@ -604,10 +858,16 @@ impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : ParserCommon<A>> ParserCommon<
     }
 }
 
-impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<A> for ObserveBytes<X, F, S>
+impl<A, X: Clone, F: Fn(&mut X, &[u8]) -> (), S: InterpParser<A>> InterpParser<A>
+    for ObserveBytes<X, F, S>
 {
     #[inline(never)]
-    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+    fn parse<'a, 'b>(
+        &self,
+        state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a> {
         loop {
             break match state {
                 None => {
@@ -616,24 +876,38 @@ impl<A, X : Clone, F : Fn(&mut X, &[u8])->(), S : InterpParser<A>> InterpParser<
                     continue;
                 }
                 Some(ref mut subparser_state) => {
-                    let new_chunk = <S as InterpParser<A>>::parse(&self.2, subparser_state, chunk, &mut destination.as_mut().ok_or(rej(chunk))?.1)?;
-                    self.1(&mut destination.as_mut().ok_or(rej(new_chunk))?.0, &chunk[0..chunk.len()-new_chunk.len()]);
+                    let new_chunk = <S as InterpParser<A>>::parse(
+                        &self.2,
+                        subparser_state,
+                        chunk,
+                        &mut destination.as_mut().ok_or(rej(chunk))?.1,
+                    )?;
+                    self.1(
+                        &mut destination.as_mut().ok_or(rej(new_chunk))?.0,
+                        &chunk[0..chunk.len() - new_chunk.len()],
+                    );
                     Ok(new_chunk)
                 }
-            }
+            };
         }
     }
 }
 
-impl<A, X:Clone, F: Fn(&mut X, &[u8])->(), S: InterpParser<A>> DynParser<A> for ObserveBytes<X, F, S>
-    {
-        type Parameter = X;
-        #[inline(never)]
-        fn init_param(&self, param: Self::Parameter, state: &mut Self::State, destination: &mut Option<Self::Returning>) {
-            *destination = Some((param.clone(), None));
-            *state = Some(<S as ParserCommon<A>>::init(&self.2));
-        }
+impl<A, X: Clone, F: Fn(&mut X, &[u8]) -> (), S: InterpParser<A>> DynParser<A>
+    for ObserveBytes<X, F, S>
+{
+    type Parameter = X;
+    #[inline(never)]
+    fn init_param(
+        &self,
+        param: Self::Parameter,
+        state: &mut Self::State,
+        destination: &mut Option<Self::Returning>,
+    ) {
+        *destination = Some((param.clone(), None));
+        *state = Some(<S as ParserCommon<A>>::init(&self.2));
     }
+}
 
 pub enum PairState<A, B> {
     Init,
@@ -641,7 +915,7 @@ pub enum PairState<A, B> {
     Second(B),
 }
 
-impl<A : ParserCommon<C>, B : ParserCommon<D>, C, D> ParserCommon<(C, D)> for (A, B) {
+impl<A: ParserCommon<C>, B: ParserCommon<D>, C, D> ParserCommon<(C, D)> for (A, B) {
     type State = PairState<<A as ParserCommon<C>>::State, <B as ParserCommon<D>>::State>;
     type Returning = (Option<A::Returning>, Option<B::Returning>);
     // #[inline(never)] // Causes stack size increase
@@ -650,22 +924,41 @@ impl<A : ParserCommon<C>, B : ParserCommon<D>, C, D> ParserCommon<(C, D)> for (A
     }
 }
 
-impl<A : InterpParser<C>, B : InterpParser<D>, C, D> InterpParser<(C, D)> for (A, B) {
+impl<A: InterpParser<C>, B: InterpParser<D>, C, D> InterpParser<(C, D)> for (A, B) {
     #[inline(never)]
-    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+    fn parse<'a, 'b>(
+        &self,
+        state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a> {
         let mut cursor = chunk;
         loop {
             match state {
                 PairState::Init => {
                     init_with_default(destination);
-                    set_from_thunk(state, || PairState::First(<A as ParserCommon<C>>::init(&self.0)));
+                    set_from_thunk(state, || {
+                        PairState::First(<A as ParserCommon<C>>::init(&self.0))
+                    });
                 }
                 PairState::First(ref mut sub) => {
-                    cursor = <A as InterpParser<C> >::parse(&self.0, sub, cursor, &mut destination.as_mut().ok_or(rej(cursor))?.0)?;
-                    set_from_thunk(state, || PairState::Second(<B as ParserCommon<D>>::init(&self.1)));
+                    cursor = <A as InterpParser<C>>::parse(
+                        &self.0,
+                        sub,
+                        cursor,
+                        &mut destination.as_mut().ok_or(rej(cursor))?.0,
+                    )?;
+                    set_from_thunk(state, || {
+                        PairState::Second(<B as ParserCommon<D>>::init(&self.1))
+                    });
                 }
                 PairState::Second(ref mut sub) => {
-                    cursor = <B as InterpParser<D> >::parse(&self.1, sub, cursor, &mut destination.as_mut().ok_or(rej(cursor))?.1)?;
+                    cursor = <B as InterpParser<D>>::parse(
+                        &self.1,
+                        sub,
+                        cursor,
+                        &mut destination.as_mut().ok_or(rej(cursor))?.1,
+                    )?;
                     break Ok(cursor);
                 }
             }
@@ -679,14 +972,14 @@ impl<A : InterpParser<C>, B : InterpParser<D>, C, D> InterpParser<(C, D)> for (A
  //
 #[macro_export]
 macro_rules! def_table {
-    {struct $name:ident { $($fieldName:ident : $type:ty),+ } } => 
+    {struct $name:ident { $($fieldName:ident : $type:ty),+ } } =>
     {
         struct $name<$($fieldName),+> {
             $($fieldName: $fieldName),+
         }
     }
 
-    enum 
+    enum
     impl<$($fieldName : InterpParser<$type>),+> InterpParser<$name<$($fieldName),+>> for $name<$($fieldName),+> {
 
     }
@@ -698,50 +991,58 @@ pub enum LengthFallbackParserState<N, NO, IS> {
     Length(N, NO),
     Element(usize, usize, IS),
     Failed(usize, usize),
-    Done
+    Done,
 }
 
 // First step, sketch out the states of your parser, with your transitions in mind
 pub struct LengthLimitedState<State> {
-    bytes_seen : usize,
-    child_state : State,
+    bytes_seen: usize,
+    child_state: State,
 }
 
 // Now define the parser type, which will resemble the mirror image of the state
 #[derive(Clone)]
 pub struct LengthLimited<S> {
-    bytes_limit : usize,
-    subparser : S
+    bytes_limit: usize,
+    subparser: S,
 }
 
 // Implement InterpParser for the parser
-impl<I, S : ParserCommon<I>> ParserCommon<I> for LengthLimited<S> {
-    type State=LengthLimitedState<<S as ParserCommon<I>>::State>;
+impl<I, S: ParserCommon<I>> ParserCommon<I> for LengthLimited<S> {
+    type State = LengthLimitedState<<S as ParserCommon<I>>::State>;
     type Returning = <S as ParserCommon<I>>::Returning;
     // Init is usually fairly straightforward
     fn init(&self) -> Self::State {
         LengthLimitedState {
             bytes_seen: 0,
-            child_state: self.subparser.init()
+            child_state: self.subparser.init(),
         }
     }
 }
 
-impl<I, S : InterpParser<I>> InterpParser<I> for LengthLimited<S> {
+impl<I, S: InterpParser<I>> InterpParser<I> for LengthLimited<S> {
     // Start by typing out the type signature, copying the input slice into a mutable reference
     // and successfully return the cursor. Elaborate on the parser from there.
-    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+    fn parse<'a, 'b>(
+        &self,
+        state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a> {
         let feed_amount = core::cmp::min(chunk.len(), self.bytes_limit - state.bytes_seen);
         // If you're calling a subparser, you will probably want to match on its status
         // Note that we are trying to keep _our_ state in lockstep with the state of our child.
         // If the child consumes, we account for it, even if we end up in a bad state.
-        match self.subparser.parse(&mut state.child_state, &chunk[0..feed_amount], destination) {
+        match self
+            .subparser
+            .parse(&mut state.child_state, &chunk[0..feed_amount], destination)
+        {
             Ok(new_cursor) => {
                 let consumed = feed_amount - new_cursor.len();
                 state.bytes_seen += consumed;
                 // If our child has accepted, they better have eaten all their vegetables.
                 if consumed < feed_amount || state.bytes_seen < self.bytes_limit {
-                    return Err((Some (OOB::Reject), new_cursor));
+                    return Err((Some(OOB::Reject), new_cursor));
                 }
                 return Ok(&chunk[feed_amount..chunk.len()]);
             }
@@ -750,7 +1051,7 @@ impl<I, S : InterpParser<I>> InterpParser<I> for LengthLimited<S> {
                 state.bytes_seen += consumed;
                 // How can you have any pudding if you don't eat your meat?
                 if consumed < feed_amount || state.bytes_seen >= self.bytes_limit {
-                    return Err((Some (OOB::Reject), new_cursor));
+                    return Err((Some(OOB::Reject), new_cursor));
                 }
                 Err((None, new_cursor))
             }
@@ -769,36 +1070,67 @@ impl<I, S : InterpParser<I>> InterpParser<I> for LengthLimited<S> {
 // Note that ObserveLengthedBytes also consumes a length prefix from the raw input
 // Confer: LengthFallback
 #[derive(Clone)]
-pub struct ObserveLengthedBytes<I : Fn () -> X, X, F, S>(pub I, pub F, pub S, pub bool);
+pub struct ObserveLengthedBytes<I: Fn() -> X, X, F, S>(pub I, pub F, pub S, pub bool);
 
-impl<IFun : Fn () -> X, N, I, S : ParserCommon<I>, X, F: Fn(&mut X, &[u8])->()> ParserCommon<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S> where
-    DefaultInterp : ParserCommon<N>,
+impl<IFun: Fn() -> X, N, I, S: ParserCommon<I>, X, F: Fn(&mut X, &[u8]) -> ()>
+    ParserCommon<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S>
+where
+    DefaultInterp: ParserCommon<N>,
     usize: TryFrom<<DefaultInterp as ParserCommon<N>>::Returning>,
-    <DefaultInterp as ParserCommon<N>>::Returning: Copy {
-    type State=LengthFallbackParserState<<DefaultInterp as ParserCommon<N>>::State, Option<<DefaultInterp as ParserCommon<N>>::Returning>, <S as ParserCommon<I>>::State>;
+    <DefaultInterp as ParserCommon<N>>::Returning: Copy,
+{
+    type State = LengthFallbackParserState<
+        <DefaultInterp as ParserCommon<N>>::State,
+        Option<<DefaultInterp as ParserCommon<N>>::Returning>,
+        <S as ParserCommon<I>>::State,
+    >;
     type Returning = (Option<<S as ParserCommon<I>>::Returning>, X);
     // #[inline(never)] // Causes stack size increase
     fn init(&self) -> Self::State {
-        LengthFallbackParserState::Length(<DefaultInterp as ParserCommon<N>>::init(&DefaultInterp), None)
+        LengthFallbackParserState::Length(
+            <DefaultInterp as ParserCommon<N>>::init(&DefaultInterp),
+            None,
+        )
     }
     #[inline(never)]
     fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
-        Self::State::init_length(state, |a| <DefaultInterp as ParserCommon<N>>::init_in_place(&DefaultInterp, a), |b| call_fn( || unsafe { (*b).as_mut_ptr().write(None); }));
+        Self::State::init_length(
+            state,
+            |a| <DefaultInterp as ParserCommon<N>>::init_in_place(&DefaultInterp, a),
+            |b| {
+                call_fn(|| unsafe {
+                    (*b).as_mut_ptr().write(None);
+                })
+            },
+        );
     }
 }
 
-impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> InterpParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S> where
-    DefaultInterp : InterpParser<N>,
+impl<IFun: Fn() -> X, N, I, S: InterpParser<I>, X, F: Fn(&mut X, &[u8]) -> ()>
+    InterpParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S>
+where
+    DefaultInterp: InterpParser<N>,
     usize: TryFrom<<DefaultInterp as ParserCommon<N>>::Returning>,
-    <DefaultInterp as ParserCommon<N>>::Returning: Copy {
+    <DefaultInterp as ParserCommon<N>>::Returning: Copy,
+{
     #[inline(never)]
-    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+    fn parse<'a, 'b>(
+        &self,
+        state: &'b mut Self::State,
+        chunk: &'a [u8],
+        destination: &mut Option<Self::Returning>,
+    ) -> ParseResult<'a> {
         use LengthFallbackParserState::*;
-        let mut cursor : &'a [u8] = chunk;
+        let mut cursor: &'a [u8] = chunk;
         loop {
             break match state {
                 Length(ref mut nstate, ref mut length_out) => {
-                    cursor = <DefaultInterp as InterpParser<N>>::parse(&DefaultInterp, nstate, cursor, length_out)?;
+                    cursor = <DefaultInterp as InterpParser<N>>::parse(
+                        &DefaultInterp,
+                        nstate,
+                        cursor,
+                        length_out,
+                    )?;
                     let len = <usize as TryFrom<<DefaultInterp as ParserCommon<N>>::Returning>>::try_from(length_out.ok_or(rej(cursor))?).or(Err(rej(cursor)))?;
                     match destination {
                         None => {
@@ -806,20 +1138,31 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> 
                                 let result = self.0();
                                 *destination = Some((None, result));
                                 Some(())
-                            }).ok_or(rej(cursor))?;
+                            })
+                            .ok_or(rej(cursor))?;
                         }
-                        _ => { }
+                        _ => {}
                     }
-                    set_from_thunk(state, || Element(0, len, <S as ParserCommon<I>>::init(&self.2)));
+                    set_from_thunk(state, || {
+                        Element(0, len, <S as ParserCommon<I>>::init(&self.2))
+                    });
                     continue;
                 }
                 Element(ref mut consumed, len, ref mut istate) => {
-                    let passed_cursor = &cursor[0..core::cmp::min(cursor.len(), (*len)-(*consumed))];
-                    match self.2.parse(istate, passed_cursor, &mut destination.as_mut().ok_or(rej(cursor))?.0) {
+                    let passed_cursor =
+                        &cursor[0..core::cmp::min(cursor.len(), (*len) - (*consumed))];
+                    match self.2.parse(
+                        istate,
+                        passed_cursor,
+                        &mut destination.as_mut().ok_or(rej(cursor))?.0,
+                    ) {
                         Ok(new_cursor) => {
                             let consumed_from_chunk = passed_cursor.len() - new_cursor.len();
                             *consumed += consumed_from_chunk;
-                            self.1(&mut destination.as_mut().ok_or(rej(cursor))?.1, &cursor[0..passed_cursor.len()-new_cursor.len()]);
+                            self.1(
+                                &mut destination.as_mut().ok_or(rej(cursor))?.1,
+                                &cursor[0..passed_cursor.len() - new_cursor.len()],
+                            );
                             if *consumed == *len {
                                 Ok(&cursor[consumed_from_chunk..])
                             } else {
@@ -834,7 +1177,10 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> 
                         Err((None, new_cursor)) => {
                             let consumed_from_chunk = passed_cursor.len() - new_cursor.len();
                             *consumed += consumed_from_chunk;
-                            self.1(&mut destination.as_mut().ok_or(rej(cursor))?.1, &cursor[0..passed_cursor.len()-new_cursor.len()]);
+                            self.1(
+                                &mut destination.as_mut().ok_or(rej(cursor))?.1,
+                                &cursor[0..passed_cursor.len() - new_cursor.len()],
+                            );
                             if *consumed == *len {
                                 Ok(&cursor[consumed_from_chunk..])
                             } else {
@@ -855,10 +1201,15 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> 
                     } else {
                         use core::cmp::min;
                         let new_cursor = &cursor[min((*len) - (*consumed), cursor.len())..];
-                        self.1(&mut destination.as_mut().ok_or(rej(cursor))?.1, &cursor[0..cursor.len()-new_cursor.len()]);
+                        self.1(
+                            &mut destination.as_mut().ok_or(rej(cursor))?.1,
+                            &cursor[0..cursor.len() - new_cursor.len()],
+                        );
                         if cursor.len() >= ((*len) - (*consumed)) {
                             set_from_thunk(state, || Done);
-                            set_from_thunk(&mut destination.as_mut().ok_or(rej(cursor))?.0, || None);
+                            set_from_thunk(&mut destination.as_mut().ok_or(rej(cursor))?.0, || {
+                                None
+                            });
                             Ok(new_cursor)
                         } else {
                             let new_consumed = *consumed + cursor.len();
@@ -868,24 +1219,34 @@ impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> 
                         }
                     }
                 }
-                Done => { Err((Some(OOB::Reject), cursor)) }
-            }
+                Done => Err((Some(OOB::Reject), cursor)),
+            };
         }
     }
 }
 
-impl<IFun : Fn () -> X, N, I, S : InterpParser<I>, X, F: Fn(&mut X, &[u8])->()> DynParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S> where
-    DefaultInterp : InterpParser<N>,
+impl<IFun: Fn() -> X, N, I, S: InterpParser<I>, X, F: Fn(&mut X, &[u8]) -> ()>
+    DynParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S>
+where
+    DefaultInterp: InterpParser<N>,
     usize: TryFrom<<DefaultInterp as ParserCommon<N>>::Returning>,
-    <DefaultInterp as ParserCommon<N>>::Returning: Copy {
-        type Parameter = X;
-        #[inline(never)]
-        fn init_param(&self, param: Self::Parameter, state: &mut Self::State, destination: &mut Option<Self::Returning>) {
-            set_from_thunk(destination, || { Some((None, param)) });
-            *state = LengthFallbackParserState::Length(<DefaultInterp as ParserCommon<N>>::init(&DefaultInterp), None)
-        }
+    <DefaultInterp as ParserCommon<N>>::Returning: Copy,
+{
+    type Parameter = X;
+    #[inline(never)]
+    fn init_param(
+        &self,
+        param: Self::Parameter,
+        state: &mut Self::State,
+        destination: &mut Option<Self::Returning>,
+    ) {
+        set_from_thunk(destination, || Some((None, param)));
+        *state = LengthFallbackParserState::Length(
+            <DefaultInterp as ParserCommon<N>>::init(&DefaultInterp),
+            None,
+        )
     }
-
+}
 
 /*
 #[cfg(test)]
@@ -947,7 +1308,7 @@ mod test {
                 Err((None, new_cursor)) => {
                     assert_eq!(new_cursor, &[][..]);
                     match chunk_iter.next() {
-                        Some(new) => { 
+                        Some(new) => {
                             cursor = new;
                         }
                         None => {

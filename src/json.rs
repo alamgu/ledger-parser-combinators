@@ -11,10 +11,10 @@ pub struct JsonArray<T>(pub T);
 #[derive(PartialEq, Eq)]
 pub enum StringList {
     Cons(&'static [u8], &'static StringList),
-    Nil
+    Nil,
 }
 
-pub struct JsonStringEnum<const MAX : usize, const STRS : &'static StringList>;
+pub struct JsonStringEnum<const MAX: usize, const STRS: &'static StringList>;
 
 pub use paste::paste;
 #[macro_export]
