@@ -35,5 +35,5 @@ features = [ "speculos" ]
 testmacro = { git = "https://github.com/yhql/testmacro"}
 
 [patch."https://github.com/LedgerHQ/ledger-nanos-sdk.git".nanos_sdk]
-git = "https://github.com/ObsidianSystems/ledger-nanos-sdk.git"
-branch = "use-ambient-compiler-and-target"
+git = "https://github.com/alamgu/ledger-nanos-sdk.git"
+branch = "support-nix-or-non-nix-toolchain"
