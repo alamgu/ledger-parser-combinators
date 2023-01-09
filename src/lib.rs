@@ -14,7 +14,6 @@
 #![cfg_attr(target_family = "bolos", feature(custom_test_frameworks))]
 #![reexport_test_harness_main = "test_main"]
 #![cfg_attr(target_family = "bolos", test_runner(nanos_sdk::sdk_test_runner))]
-
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 #[macro_use]
