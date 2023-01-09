@@ -4,12 +4,16 @@ use std::path::Path;
 impl proto::descriptor::FileDescriptorProto {
     pub fn gen_rust(&self, root_dir: &Path) {
         if self.get_syntax() != "proto3" {
-            eprintln!("Syntax specifer is not \"proto3\". Skiping file: \"{}\"", self.get_name());
+            eprintln!(
+                "Syntax specifer is not \"proto3\". Skiping file: \"{}\"",
+                self.get_name()
+            );
             return;
         }
 
         // package: Should be used for building the module namespace
-        let package_path = self.get_package()
+        let package_path = self
+            .get_package()
             .split('.')
             .skip_while(|s| s.is_empty())
             .collect::<Vec<_>>();
@@ -63,7 +67,9 @@ impl proto::descriptor::DescriptorProto {
         // field
         //
         // Fields in the message
-        let a = self.field.iter()
+        let a = self
+            .field
+            .iter()
             .map(|f| format!("        , {}", f.generate_impl_feild(package_depth)))
             .collect::<Vec<_>>()
             .join("\n");
@@ -101,7 +107,9 @@ impl proto::descriptor::EnumDescriptorProto {
         // options for enum type
         code.push_str(&format!("define_enum! {{\n    {} {{\n", name));
 
-        let a = self.value.iter()
+        let a = self
+            .value
+            .iter()
             .map(|f| format!("        {}", f.to_rust_macro()))
             .collect::<Vec<_>>()
             .join(",\n");
@@ -149,12 +157,13 @@ impl proto::descriptor::FieldDescriptorProto {
         };
 
         let is_repeated = label == FieldDescriptorProto_Label::LABEL_REPEATED;
-        format!("{} : ({}, {}, {}) = {}",
-                name,
-                parse_trait,
-                _type.rust_type1(type_name, reference_depth),
-                if is_repeated { "true" } else { "false" },
-                number
+        format!(
+            "{} : ({}, {}, {}) = {}",
+            name,
+            parse_trait,
+            _type.rust_type1(type_name, reference_depth),
+            if is_repeated { "true" } else { "false" },
+            number
         )
     }
 }
@@ -164,9 +173,13 @@ use proto::descriptor::FieldDescriptorProto_Type;
 impl proto::descriptor::FieldDescriptorProto_Type {
     fn rust_type1(&self, type_name: &str, reference_depth: usize) -> String {
         match self {
-            FieldDescriptorProto_Type::TYPE_MESSAGE => buff_ref_to_rust_ref(type_name, reference_depth),
-            FieldDescriptorProto_Type::TYPE_ENUM  => buff_ref_to_rust_ref(type_name, reference_depth),
-            other => String::from(other.rust_type())
+            FieldDescriptorProto_Type::TYPE_MESSAGE => {
+                buff_ref_to_rust_ref(type_name, reference_depth)
+            }
+            FieldDescriptorProto_Type::TYPE_ENUM => {
+                buff_ref_to_rust_ref(type_name, reference_depth)
+            }
+            other => String::from(other.rust_type()),
         }
     }
 
@@ -188,40 +201,33 @@ impl proto::descriptor::FieldDescriptorProto_Type {
             FieldDescriptorProto_Type::TYPE_SINT32 => "Sint32",
             FieldDescriptorProto_Type::TYPE_SINT64 => "Sint64",
 
-            FieldDescriptorProto_Type::TYPE_GROUP |
-            FieldDescriptorProto_Type::TYPE_MESSAGE |
-            FieldDescriptorProto_Type::TYPE_ENUM
-                => panic!("wops")
+            FieldDescriptorProto_Type::TYPE_GROUP
+            | FieldDescriptorProto_Type::TYPE_MESSAGE
+            | FieldDescriptorProto_Type::TYPE_ENUM => panic!("wops"),
         }
     }
 
     fn parse_trait(&self) -> &'static str {
         match self {
-            FieldDescriptorProto_Type::TYPE_INT32 |
-            FieldDescriptorProto_Type::TYPE_INT64 |
-            FieldDescriptorProto_Type::TYPE_UINT32 |
-            FieldDescriptorProto_Type::TYPE_UINT64 |
-            FieldDescriptorProto_Type::TYPE_SINT32 |
-            FieldDescriptorProto_Type::TYPE_SINT64 |
-            FieldDescriptorProto_Type::TYPE_BOOL |
-            FieldDescriptorProto_Type::TYPE_ENUM |
+            FieldDescriptorProto_Type::TYPE_INT32
+            | FieldDescriptorProto_Type::TYPE_INT64
+            | FieldDescriptorProto_Type::TYPE_UINT32
+            | FieldDescriptorProto_Type::TYPE_UINT64
+            | FieldDescriptorProto_Type::TYPE_SINT32
+            | FieldDescriptorProto_Type::TYPE_SINT64
+            | FieldDescriptorProto_Type::TYPE_BOOL
+            | FieldDescriptorProto_Type::TYPE_ENUM
+            | FieldDescriptorProto_Type::TYPE_FIXED64
+            | FieldDescriptorProto_Type::TYPE_SFIXED64
+            | FieldDescriptorProto_Type::TYPE_DOUBLE
+            | FieldDescriptorProto_Type::TYPE_FIXED32
+            | FieldDescriptorProto_Type::TYPE_SFIXED32
+            | FieldDescriptorProto_Type::TYPE_FLOAT
+            | FieldDescriptorProto_Type::TYPE_GROUP => "AsyncParser",
 
-            FieldDescriptorProto_Type::TYPE_FIXED64 |
-            FieldDescriptorProto_Type::TYPE_SFIXED64 |
-            FieldDescriptorProto_Type::TYPE_DOUBLE |
-
-            FieldDescriptorProto_Type::TYPE_FIXED32 |
-            FieldDescriptorProto_Type::TYPE_SFIXED32 |
-            FieldDescriptorProto_Type::TYPE_FLOAT |
-
-            FieldDescriptorProto_Type::TYPE_GROUP
-                => "AsyncParser",
-
-            FieldDescriptorProto_Type::TYPE_STRING |
-            FieldDescriptorProto_Type::TYPE_BYTES |
-            FieldDescriptorProto_Type::TYPE_MESSAGE
-                => "LengthDelimitedParser"
-
+            FieldDescriptorProto_Type::TYPE_STRING
+            | FieldDescriptorProto_Type::TYPE_BYTES
+            | FieldDescriptorProto_Type::TYPE_MESSAGE => "LengthDelimitedParser",
         }
     }
 }
@@ -235,9 +241,7 @@ fn buff_ref_to_rust_ref(buff_ref: &str, reference_depth: usize) -> String {
         .map(String::from)
         .collect::<Vec<_>>();
 
-    let (end, rest) = parts
-        .split_last()
-        .unwrap();
+    let (end, rest) = parts.split_last().unwrap();
 
     /*if end == "Any" {
         return String::from("Any");
@@ -252,13 +256,13 @@ fn buff_ref_to_rust_ref(buff_ref: &str, reference_depth: usize) -> String {
         .join("::");
 }
 
-use std::fs::OpenOptions;
 use std::fs;
+use std::fs::OpenOptions;
 use std::io::Write;
 
 // Add code into a module path, writing module decraltions where missing from root/mod.rs down.
 // And writing the code to a mod.rs file at the end of the mod_path
-pub fn add_to_mod(root: &Path, mod_path: &[&str], code: &[u8]){
+pub fn add_to_mod(root: &Path, mod_path: &[&str], code: &[u8]) {
     // If we have to add the code in a module relative to root
     if let Some((new_mod, rest)) = mod_path.split_first() {
         // Directory of the module
@@ -268,10 +272,12 @@ pub fn add_to_mod(root: &Path, mod_path: &[&str], code: &[u8]){
         // that means its a new modules and we never included it in root's module
         if !mod_dir.exists() {
             // Create a directory for the new module
-            fs::create_dir(&mod_dir)
-                .expect("Could not create module dir");
+            fs::create_dir(&mod_dir).expect("Could not create module dir");
             // Include the module
-            write_to_file_ensure_header(&root.join("mod.rs"), &format!("pub mod {};\n\n", new_mod).as_bytes());
+            write_to_file_ensure_header(
+                &root.join("mod.rs"),
+                &format!("pub mod {};\n\n", new_mod).as_bytes(),
+            );
         }
 
         // Add the code deeper in the module tree

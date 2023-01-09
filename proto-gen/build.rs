@@ -1,7 +1,7 @@
 use std::env;
+use std::fs;
 use std::io::Result;
 use std::path::Path;
-use std::fs;
 
 fn main() -> Result<()> {
     let out_dir = format!("{}/google", env::var("OUT_DIR").unwrap());

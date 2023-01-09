@@ -1,9 +1,9 @@
-use std::io::BufReader;
 use std::fs::File;
-use std::process;
-use std::process::Stdio;
+use std::io::BufReader;
 use std::io::Error;
 use std::io::ErrorKind;
+use std::process;
+use std::process::Stdio;
 
 pub mod google_proto {
     include!(concat!(env!("OUT_DIR"), "/google/mod.rs"));
@@ -12,7 +12,11 @@ pub mod google_proto {
 fn main() -> std::io::Result<()> {
     let mut cmd = process::Command::new(&"protoc");
     cmd.stdin(process::Stdio::null());
-    cmd.args([ "--proto_path=src/protos/", "--descriptor_set_out=out.fds", "src/protos/tendermint/abci/types.proto" ]);
+    cmd.args([
+        "--proto_path=src/protos/",
+        "--descriptor_set_out=out.fds",
+        "src/protos/tendermint/abci/types.proto",
+    ]);
 
     cmd.stderr(Stdio::piped());
 
@@ -25,15 +29,20 @@ fn main() -> std::io::Result<()> {
             .to_owned();
         return Err(Error::new(
             ErrorKind::Other,
-            format!("command exited with non-zero error {:?}; stderr: {:?}", cmd, stderr)));
+            format!(
+                "command exited with non-zero error {:?}; stderr: {:?}",
+                cmd, stderr
+            ),
+        ));
     }
 
     let f = File::open("out.fds")?;
     let mut reader = BufReader::new(f);
 
-    let boo : google_proto::descriptor::FileDescriptorSet = protobuf::Message::parse_from_reader(&mut reader)?;
+    let boo: google_proto::descriptor::FileDescriptorSet =
+        protobuf::Message::parse_from_reader(&mut reader)?;
 
-    println!("{:#?}",boo);
+    println!("{:#?}", boo);
 
     Ok(())
 }

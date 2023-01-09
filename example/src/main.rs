@@ -2,7 +2,11 @@
 #![feature(generic_associated_types)]
 #![feature(min_type_alias_impl_trait)]
 
-use ledger_parser_combinators::{define_message, async_parser::*, protobufs::{schema::*, async_parser::*}};
+use ledger_parser_combinators::{
+    async_parser::*,
+    define_message,
+    protobufs::{async_parser::*, schema::*},
+};
 use std::future::Future;
 
 mod proto {
@@ -16,7 +20,6 @@ fn main() {
     let _a: Option<proto::test::proto::thing::Stuff> = None;
     let _a: Option<proto::test::proto::thing::stuff::Blag> = None;
 }
-
 
 define_message! {
     Thing {

@@ -1,48 +1,43 @@
+use proto::descriptor::FileDescriptorSet;
 use std::env;
 use std::fs;
-use std::io::BufReader;
-use std::path::PathBuf;
-use std::path::Path;
 use std::fs::File;
-use proto::descriptor::FileDescriptorSet;
+use std::io::BufReader;
+use std::path::Path;
+use std::path::PathBuf;
 
 use crate::proto;
 
 mod file_descriptor;
 
 pub fn generate_rust_code(file_descriptor_set_bin: &Path, out_path_in_out_dir: &Path) {
-    let f = File::open(file_descriptor_set_bin)
-        .unwrap();
+    let f = File::open(file_descriptor_set_bin).unwrap();
     let mut reader = BufReader::new(f);
 
-    let proto_file_descriptor_set: FileDescriptorSet = protobuf::Message::parse_from_reader(&mut reader)
-        .unwrap();
+    let proto_file_descriptor_set: FileDescriptorSet =
+        protobuf::Message::parse_from_reader(&mut reader).unwrap();
 
     if out_path_in_out_dir.is_absolute() {
         panic!("Must provide relative path from $OUT_DIR");
     }
 
-    let mut out_dir: PathBuf = env::var("OUT_DIR")
-        .expect("OUT_DIR env var not set")
-        .into();
+    let mut out_dir: PathBuf = env::var("OUT_DIR").expect("OUT_DIR env var not set").into();
 
     out_dir.push(out_path_in_out_dir);
 
     // posible race condition if two parallel calls to this function use the same dir or two hieracacly related dirs (parent/child)
     if out_dir.exists() {
-        fs::remove_dir_all(&out_dir)
-            .expect("Could not remove old dir");
+        fs::remove_dir_all(&out_dir).expect("Could not remove old dir");
     }
 
-    fs::create_dir(&out_dir)
-        .expect("Could not create new dir");
+    fs::create_dir(&out_dir).expect("Could not create new dir");
 
     file_descriptor::add_to_mod(
         &out_dir,
         &[],
-br#"#[allow(non_camel_case_types)]
+        br#"#[allow(non_camel_case_types)]
 #[allow(dead_code)]
-"#
+"#,
     );
 
     for file in proto_file_descriptor_set.file {
@@ -52,12 +47,12 @@ br#"#[allow(non_camel_case_types)]
 
 #[cfg(test)]
 pub mod tests {
+    use pretty_assertions::assert_eq;
     use std::env;
-    use std::path::PathBuf;
     use std::fs;
     use std::path::Path;
+    use std::path::PathBuf;
     use std::process;
-    use pretty_assertions::assert_eq;
 
     #[test]
     fn cosmos_sign_doc() {
@@ -66,7 +61,9 @@ pub mod tests {
             .tempdir()
             .unwrap();
         let fds_file = temp_dir.path().join("fds.bin");
-        parse_proto_to_file(&fds_file, br#"syntax = "proto3";
+        parse_proto_to_file(
+            &fds_file,
+            br#"syntax = "proto3";
 package cosmos.tx.v1beta1;
 // SignDoc is the type used for generating sign bytes for SIGN_MODE_DIRECT.
 message SignDoc {
@@ -86,14 +83,16 @@ message SignDoc {
   // account_number is the account number of the account in state
   uint64 account_number = 4;
 }
-"#);
+"#,
+        );
 
         let mod_dir = Path::new("cosmos_test");
 
         super::generate_rust_code(&fds_file, mod_dir);
 
-        assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
-r#"#[allow(unused_imports)]
+        assert_eq!(
+            string_from_path(&mod_dir.join("mod.rs")),
+            r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
@@ -102,27 +101,33 @@ use core::future::Future;
 #[allow(dead_code)]
 pub mod cosmos;
 
-"#);
-        assert_eq!(string_from_path(&mod_dir.join("cosmos/mod.rs")),
-r#"#[allow(unused_imports)]
+"#
+        );
+        assert_eq!(
+            string_from_path(&mod_dir.join("cosmos/mod.rs")),
+            r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
 
 pub mod tx;
 
-"#);
-        assert_eq!(string_from_path(&mod_dir.join("cosmos/tx/mod.rs")),
-r#"#[allow(unused_imports)]
+"#
+        );
+        assert_eq!(
+            string_from_path(&mod_dir.join("cosmos/tx/mod.rs")),
+            r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
 
 pub mod v1beta1;
 
-"#);
-        assert_eq!(string_from_path(&mod_dir.join("cosmos/tx/v1beta1/mod.rs")),
-r#"#[allow(unused_imports)]
+"#
+        );
+        assert_eq!(
+            string_from_path(&mod_dir.join("cosmos/tx/v1beta1/mod.rs")),
+            r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
@@ -136,26 +141,31 @@ define_message! { @impl
     }
 }
 
-"#);
+"#
+        );
     }
 
     #[test]
     fn empty_message() {
-       let temp_dir = tempfile::Builder::new()
+        let temp_dir = tempfile::Builder::new()
             .prefix("proto-test")
             .tempdir()
             .unwrap();
         let fds_file = temp_dir.path().join("fds.bin");
-        parse_proto_to_file(&fds_file, br#"syntax = "proto3";
+        parse_proto_to_file(
+            &fds_file,
+            br#"syntax = "proto3";
 message Test { }
-"#);
+"#,
+        );
 
         let mod_dir = Path::new("empty_message_test");
 
         super::generate_rust_code(&fds_file, mod_dir);
 
-        assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
-r#"#[allow(unused_imports)]
+        assert_eq!(
+            string_from_path(&mod_dir.join("mod.rs")),
+            r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
@@ -168,17 +178,20 @@ define_message! { @impl
     }
 }
 
-"#);
+"#
+        );
     }
 
     #[test]
     fn mod_less_sub_messag() {
-       let temp_dir = tempfile::Builder::new()
+        let temp_dir = tempfile::Builder::new()
             .prefix("proto-test")
             .tempdir()
             .unwrap();
         let fds_file = temp_dir.path().join("fds.bin");
-        parse_proto_to_file(&fds_file, br#"syntax = "proto3";
+        parse_proto_to_file(
+            &fds_file,
+            br#"syntax = "proto3";
 message Test {
     Foo test_thing = 1;
     Foo.Bar test_other = 2;
@@ -197,14 +210,16 @@ message Bizz {
     Test.Foo thing2 = 2;
     Test.Foo.Bar thing3 = 3;
 }
-"#);
+"#,
+        );
 
         let mod_dir = Path::new("sub_message");
 
         super::generate_rust_code(&fds_file, mod_dir);
 
-        assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
-r#"#[allow(unused_imports)]
+        assert_eq!(
+            string_from_path(&mod_dir.join("mod.rs")),
+            r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
@@ -228,9 +243,11 @@ define_message! { @impl
     }
 }
 
-"#);
-        assert_eq!(string_from_path(&mod_dir.join("test/mod.rs")),
-r#"#[allow(unused_imports)]
+"#
+        );
+        assert_eq!(
+            string_from_path(&mod_dir.join("test/mod.rs")),
+            r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
@@ -244,10 +261,12 @@ define_message! { @impl
     }
 }
 
-"#);
+"#
+        );
 
-        assert_eq!(string_from_path(&mod_dir.join("test/foo/mod.rs")),
-r#"#[allow(unused_imports)]
+        assert_eq!(
+            string_from_path(&mod_dir.join("test/foo/mod.rs")),
+            r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
@@ -259,13 +278,13 @@ define_message! { @impl
     }
 }
 
-"#);
+"#
+        );
     }
 
     #[test]
     fn google_protos() {
-        let google_proto_include = PathBuf::from(env::var("PROTO_INCLUDE")
-            .unwrap());
+        let google_proto_include = PathBuf::from(env::var("PROTO_INCLUDE").unwrap());
 
         let temp_dir = tempfile::Builder::new()
             .prefix("buf-out")
@@ -281,14 +300,20 @@ define_message! { @impl
             .output()
             .unwrap();
 
-        assert!(output.status.success(), "protoc command returned non success status {}\nstderr:\n{}", output.status, String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "protoc command returned non success status {}\nstderr:\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
 
         let mod_dir = Path::new("google_protos_test");
 
         super::generate_rust_code(&fds_file, &mod_dir);
 
-        assert_eq!(string_from_path(&mod_dir.join("mod.rs")),
-r#"#[allow(unused_imports)]
+        assert_eq!(
+            string_from_path(&mod_dir.join("mod.rs")),
+            r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
@@ -297,18 +322,22 @@ use core::future::Future;
 #[allow(dead_code)]
 pub mod google;
 
-"#);
-        assert_eq!(string_from_path(&mod_dir.join("google/mod.rs")),
-r#"#[allow(unused_imports)]
+"#
+        );
+        assert_eq!(
+            string_from_path(&mod_dir.join("google/mod.rs")),
+            r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
 
 pub mod protobuf;
 
-"#);
-        assert_eq!(string_from_path(&mod_dir.join("google/protobuf/field/mod.rs")),
-r#"#[allow(unused_imports)]
+"#
+        );
+        assert_eq!(
+            string_from_path(&mod_dir.join("google/protobuf/field/mod.rs")),
+            r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
@@ -346,9 +375,11 @@ define_enum! {
     }
 }
 
-"#);
-        assert_eq!(string_from_path(&mod_dir.join("google/protobuf/mod.rs")),
-r#"#[allow(unused_imports)]
+"#
+        );
+        assert_eq!(
+            string_from_path(&mod_dir.join("google/protobuf/mod.rs")),
+            r#"#[allow(unused_imports)]
 use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
@@ -457,17 +488,16 @@ define_message! { @impl
     }
 }
 
-"#);
+"#
+        );
     }
 
     pub fn string_from_path(parth_from_out_dir: &Path) -> String {
-        let out_dir = env::var("OUT_DIR")
-            .expect("OUT_DIR env var is not set");
+        let out_dir = env::var("OUT_DIR").expect("OUT_DIR env var is not set");
 
         let path = Path::new(&out_dir).join(parth_from_out_dir);
 
-        let bytes = fs::read(path)
-            .expect("Could not read file");
+        let bytes = fs::read(path).expect("Could not read file");
 
         String::from_utf8_lossy(&bytes)
             .parse()
@@ -487,8 +517,7 @@ define_message! { @impl
 
         let temp_file_path = temp_dir.join(test_file_name);
 
-        fs::write(&temp_file_path, proto)
-            .expect("Could not write to temp file");
+        fs::write(&temp_file_path, proto).expect("Could not write to temp file");
 
         let output = process::Command::new("protoc")
             .arg("--include_imports")
@@ -498,6 +527,11 @@ define_message! { @impl
             .output()
             .unwrap();
 
-        assert!(output.status.success(), "protoc command returned non success status {}\nstderr:\n{}", output.status, String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "protoc command returned non success status {}\nstderr:\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
