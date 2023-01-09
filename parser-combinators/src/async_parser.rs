@@ -14,6 +14,7 @@ use crate::endianness::{Endianness, Convert};
 use core::future::Future;
 use core::convert::TryInto;
 use arrayvec::ArrayVec;
+#[cfg(feature = "logging")]
 use ledger_log::*;
 use core::pin::Pin;
 use core::task::Context;
@@ -37,6 +38,7 @@ static mut REJECTED : bool = false;
 
 /// Reject the parse.
 pub fn reject<T>() -> impl Future<Output = T> {
+    #[cfg(feature = "logging")]
     error!("Rejecting parse");
     // Do some out-of-band rejection thingie
     unsafe { REJECTED = true; }
@@ -45,6 +47,7 @@ pub fn reject<T>() -> impl Future<Output = T> {
 
 #[allow(unused_variables)]
 pub fn reject_on<T>(file: &'static str, line: u32) -> impl Future<Output = T> {
+    #[cfg(feature = "logging")]
     error!("Rejecting, {}:{}", file, line);
     unsafe { REJECTED = true; }
     core::future::pending()
