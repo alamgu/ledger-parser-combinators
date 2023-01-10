@@ -2,6 +2,7 @@ pub struct Json<S>(pub S);
 
 pub struct JsonAny;
 pub struct JsonBool;
+pub struct JsonNull;
 pub struct JsonString;
 pub struct JsonNumber;
 pub struct JsonArray<T>(pub T);
