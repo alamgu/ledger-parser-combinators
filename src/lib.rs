@@ -67,9 +67,9 @@ fn handle_panic(_: &PanicInfo) -> ! {
     exit_app(0);
 }
 
-pub mod schema;
 pub mod endianness;
 pub mod interp;
+pub mod schema;
 
 pub mod core_parsers;
 
