@@ -16,11 +16,11 @@ impl< I : RV, const N : usize > RV for Array<I, N> {
     type R = [I::R; N];
 }
 
-
 use arrayvec::ArrayVec;
 use core::convert::TryInto;
-impl< N : RV, I : RV, const M : usize > RV for DArray<N, I, M> where
-   <N as RV>::R: TryInto<usize>
+impl<N: RV, I: RV, const M: usize> RV for DArray<N, I, M>
+where
+    <N as RV>::R: TryInto<usize>,
 {
     type R = ArrayVec<I::R, M>;
 }
@@ -31,8 +31,7 @@ macro_rules! number_parser {
         impl<const E: Endianness> RV for $p<E> {
             type R = $t;
         }
-
-    }
+    };
 }
 
 number_parser! { U16, u16 }
@@ -45,8 +44,10 @@ number_parser! { U64, u64 }
 
 pub struct NOf<I, N>(pub N, pub I);
 
-impl< I : RV, N : RV > RV for NOf<I, N> where
-   <I as RV>::R: TryInto<()>, <N as RV>::R: TryInto<usize>
+impl<I: RV, N: RV> RV for NOf<I, N>
+where
+    <I as RV>::R: TryInto<()>,
+    <N as RV>::R: TryInto<usize>,
 {
     type R = ();
 }

@@ -1,33 +1,35 @@
 [unstable]
-# build-std = ["core"]
-configurable-env = true
+build-std = ["core"]
+build-std-features = ["compiler-builtins-mem"]
 
-[target.thumbv6m-none-eabi]
-rustflags = [ 
-  "-C", "relocation-model=ropi",
-  "-C", "link-arg=-Tscript.ld",
-  "-C", "opt-level=3",
-  "-C", "passes=ledger-ropi",
+[target.nanosplus]
+rustflags = [
   "-C", "codegen-units=1",
-  "-C", "lto",
+  "-C", "save-temps", # Fixes incremental builds by keeping .bc and .ll files
   "-C", "embed-bitcode",
-  "--emit=obj,llvm-ir,llvm-bc",
-  "--cfg", "target_os=\"nanos\"",
-  "-Z", "macro-backtrace"
-#  "-Z", "print-type-sizes",
+  "--emit=metadata,link,obj,llvm-ir,llvm-bc"
 ]
-linker = "armv6m-unknown-none-eabi-clang"
-runner = "./speculos-wrapper -k 2.0"
+runner = "./speculos-wrapper -m nanosp -k 1.0.3 "
 
-[build]
-# target = "thumbv6m-none-eabi"
-# rustdocflags = [ "--cfg", "target_os=\"nanos\"" ]
+[target.nanos]
+rustflags = [
+  "-C", "codegen-units=1",
+  "-C", "save-temps", # Fixes incremental builds by keeping .bc and .ll files
+  "-C", "embed-bitcode",
+  "--emit=metadata,link,obj,llvm-ir,llvm-bc"
+]
+runner = "./speculos-wrapper -m nanos "
+
+[target.nanox]
+rustflags = [
+  "-C", "codegen-units=1",
+  "-C", "save-temps", # Fixes incremental builds by keeping .bc and .ll files
+  "-C", "embed-bitcode",
+  "--emit=metadata,link,obj,llvm-ir,llvm-bc"
+]
+runner = "./speculos-wrapper -m nanox "
 
 [alias]
 tt = "test --features extra_debug"
 br = "build --release"
-stackcheck = "stack-sizes --release --bin pocket --target=thumbv6m-none-eabi"
-unit = "test --features=speculos -Z build-std=core --lib"
-
-[env]
-RUST_TEST_THREADS="1"
+stackcheck = "stack-sizes --release --bin rust-app --target=thumbv6m-none-eabi"
