@@ -7,8 +7,8 @@ pub enum ProtobufWire {
     Fixed64Bit = 1,
     LengthDelimited = 2,
     StartGroup = 3, // Deprecated
-    EndGroup = 4, // Deprecated
-    Fixed32Bit = 5
+    EndGroup = 4,   // Deprecated
+    Fixed32Bit = 5,
 }
 
 pub trait ProtobufWireFormat {
@@ -109,4 +109,3 @@ impl<A, B, C> Mul<C> for Product<A, B> {
         Product(self.0, Product(self.1, rhs))
     }
 }
-

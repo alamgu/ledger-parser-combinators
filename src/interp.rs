@@ -16,7 +16,6 @@ pub struct SubInterp<S>(pub S);
 /// required to do so and returns nothing.
 pub struct DropInterp;
 
-
 /// Action is essentailly an fmap that can fail.
 ///
 /// We _could_ constraint F to actually be an fn(..) -> Option<()> to improve error messages when
@@ -57,8 +56,8 @@ pub struct ObserveBytes<X, F, S>(pub fn() -> X, pub F, pub S);
 /// Essentially SubInterp but for LengthFallback.
 #[derive(Clone)]
 pub struct LengthLimited<S> {
-    pub bytes_limit : usize,
-    pub subparser : S
+    pub bytes_limit: usize,
+    pub subparser: S,
 }
 
 /// ObserveLengthedBytes is notionally the composition of a LengthFallback parser with
@@ -75,8 +74,6 @@ pub struct LengthLimited<S> {
 /// Note that ObserveLengthedBytes also consumes a length prefix from the raw input
 /// Confer: LengthFallback
 #[derive(Clone)]
-pub struct ObserveLengthedBytes<I : Fn () -> X, X, F, S>(pub I, pub F, pub S, pub bool);
-
+pub struct ObserveLengthedBytes<I: Fn() -> X, X, F, S>(pub I, pub F, pub S, pub bool);
 
 pub struct Buffer<const N: usize>;
-

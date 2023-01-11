@@ -17,7 +17,7 @@ arrayvec = { version = "0.7.1", default-features = false }
 generic-array = { version = "0.14.4", default-features = false }
 paste = "1.0"
 bstringify = "0.1.2"
-enum-init = { git = "https://github.com/obsidiansystems/enum-init" }
+enum-init = { git = "https://github.com/alamgu/enum-init" }
 num-traits = { version = "0.2.14", default-features = false }
 num-derive = "0.3.3"
 trie-enum = { git = "https://github.com/alamgu/trie-enum" }
@@ -37,7 +37,5 @@ nanos_sdk = { git = "https://github.com/LedgerHQ/ledger-nanos-sdk.git" } # , fea
 testmacro = { git = "https://github.com/yhql/testmacro"}
 
 [patch."https://github.com/LedgerHQ/ledger-nanos-sdk.git".nanos_sdk]
-git = "https://github.com/ObsidianSystems/ledger-nanos-sdk.git"
-branch = "use-ambient-compiler-and-target"
-[patch.crates-io.trie-enum]
-git = "https://github.com/alamgu/trie-enum"
+git = "https://github.com/alamgu/ledger-nanos-sdk.git"
+branch = "support-nix-or-non-nix-toolchain"
