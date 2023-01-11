@@ -269,7 +269,7 @@ where
                 Err(_) => reject().await,
             };
             let mut accumulator = ArrayVec::new();
-            for _ in 1..length {
+            for _ in 0..length {
                 accumulator.push(self.0.parse(input).await);
             }
             accumulator
@@ -299,7 +299,7 @@ where
                     Ok(a) => a,
                     Err(_) => reject().await,
                 };
-            for _ in 1..length {
+            for _ in 0..length {
                 <DefaultInterp as AsyncParser<I, BS>>::parse(&DefaultInterp, input).await;
             }
         }
