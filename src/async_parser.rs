@@ -353,7 +353,7 @@ impl<
         BS: Readable,
     > AsyncParser<T, BS> for FutAction<S, F>
 {
-    type State<'c> = impl Future<Output = Self::Output> where BS: 'c, F: 'c, S: 'c;
+    type State<'c> = impl 'c + Future<Output = Self::Output> where BS: 'c, F: 'c, S: 'c;
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
             match self.1(self.0.parse(input).await).await {
