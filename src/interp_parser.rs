@@ -1,5 +1,6 @@
 use crate::core_parsers::*;
 use crate::endianness::{Convert, Endianness};
+use nom::IResult;
 use arrayvec::ArrayVec;
 
 #[cfg(feature = "logging")]
@@ -29,6 +30,10 @@ pub type RemainingSlice<'a> = &'a [u8];
 // encounters an error condition, it will signal it in the OOB type, and we'll
 // return the remaining slice for further elaboration or resuming.
 pub type ParseResult<'a> = Result<RemainingSlice<'a>, (PResult<OOB>, RemainingSlice<'a>)>;
+
+pub fn yay<'a, I, O>(x: ParseResult<'a>) -> IResult<I, O>{
+ x
+}
 
 pub fn reject<'a, R>(chunk: &'a [u8]) -> Result<R, (PResult<OOB>, &'a [u8])> {
     Err((Some(OOB::Reject), chunk))

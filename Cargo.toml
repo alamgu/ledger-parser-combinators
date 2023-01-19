@@ -18,6 +18,7 @@ generic-array = { version = "0.14.4", default-features = false }
 paste = "1.0"
 bstringify = "0.1.2"
 enum-init = { git = "https://github.com/alamgu/enum-init" }
+nom = { git = "https://github.com/rust-bakery/nom", default-features = false }
 
 [dependencies.ledger-log]
 git = "https://github.com/alamgu/ledger-log"
