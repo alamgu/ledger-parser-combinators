@@ -1,7 +1,7 @@
 use crate::core_parsers::*;
 use crate::endianness::{Convert, Endianness};
-use nom::IResult;
 use arrayvec::ArrayVec;
+use nom::*;
 
 #[cfg(feature = "logging")]
 use ledger_log::error;
@@ -29,10 +29,29 @@ pub type RemainingSlice<'a> = &'a [u8];
 // case the remaining slice is empty because we consumed it all). If the parser
 // encounters an error condition, it will signal it in the OOB type, and we'll
 // return the remaining slice for further elaboration or resuming.
-pub type ParseResult<'a> = Result<RemainingSlice<'a>, (PResult<OOB>, RemainingSlice<'a>)>;
+pub type NewParseResult<'a> = NewParseResult1<'a, ()>;
+pub type NewParseResult1<'a, T> = IResult<RemainingSlice<'a>, T>;
+pub type ParseResult<'a> = NewParseResult<'a>;
+pub type OldParseResult<'a> = Result<RemainingSlice<'a>, (PResult<OOB>, RemainingSlice<'a>)>;
 
-pub fn yay<'a, I, O>(x: ParseResult<'a>) -> IResult<I, O>{
- x
+pub fn yay2<'a>(
+    i: PResult<OOB>,
+    j: RemainingSlice<'a>,
+) -> Err<nom::error::Error<RemainingSlice<'a>>> {
+    match i {
+        Some(OOB::Reject) => nom::Err::Error(nom::error::Error {
+            input: j,
+            code: nom::error::ErrorKind::Fail,
+        }),
+        None => nom::Err::Incomplete(Needed::Unknown),
+    }
+}
+
+pub fn yay<'a>(x: OldParseResult<'a>) -> NewParseResult<'a> {
+    match x {
+        Ok(a) => Ok((a, ())),
+        Err((i, j)) => Err(yay2(i, j)),
+    }
 }
 
 pub fn reject<'a, R>(chunk: &'a [u8]) -> Result<R, (PResult<OOB>, &'a [u8])> {
@@ -206,9 +225,9 @@ impl<I, S: InterpParser<I>, const N: usize> InterpParser<Array<I, N>> for SubInt
         match state.buffer.take().into_inner() {
             Ok(rv) => {
                 *destination = Some(rv);
-                Ok(remaining)
+                Ok((remaining, ()))
             }
-            Err(_) => Err((Some(OOB::Reject), remaining)), // Should be impossible, could just panic.
+            Err(_) => yay(Err((Some(OOB::Reject), remaining))), // Should be impossible, could just panic.
         }
     }
 }
@@ -333,7 +352,7 @@ where
                         nstate,
                         chunk,
                         &mut sub_destination,
-                    )?;
+                    )?.0;
                     let len_temp = sub_destination.ok_or((Some(OOB::Reject), newcur))?;
                     cursor = newcur;
                     let len = <usize as TryFrom<<DefaultInterp as ParserCommon<N>>::Returning>>::try_from(len_temp).or(Err((Some(OOB::Reject), newcur)))?;
@@ -348,7 +367,7 @@ where
                 }
                 Elements(ref mut vec, len, ref mut istate, ref mut sub_destination) => {
                     while vec.len() < *len {
-                        cursor = self.0.parse(istate, cursor, sub_destination)?;
+                        cursor = self.0.parse(istate, cursor, sub_destination)?.0;
                         vec.try_push(
                             core::mem::take(sub_destination).ok_or((Some(OOB::Reject), cursor))?,
                         )
@@ -357,12 +376,12 @@ where
                     }
                     *destination = match core::mem::replace(state, Done) {
                         Elements(vec, _, _, _) => Some(vec),
-                        _ => break Err((Some(OOB::Reject), cursor)),
+                        _ => break yay(Err((Some(OOB::Reject), cursor))),
                     };
-                    break Ok(cursor);
+                    break Ok((cursor,()));
                 }
                 Done => {
-                    break Err((Some(OOB::Reject), cursor));
+                    break yay(Err((Some(OOB::Reject), cursor)));
                 }
             }
         }
@@ -461,13 +480,13 @@ impl<A, R, S: InterpParser<A>> InterpParser<A>
         chunk: &'a [u8],
         destination: &mut Option<Self::Returning>,
     ) -> ParseResult<'a> {
-        let new_chunk = self.0.parse(&mut state.0, chunk, &mut state.1)?;
+        let new_chunk = self.0.parse(&mut state.0, chunk, &mut state.1)?.0;
         match (self.1)(
             state.1.as_ref().ok_or((Some(OOB::Reject), new_chunk))?,
             destination,
         ) {
-            None => Err((Some(OOB::Reject), new_chunk)),
-            Some(()) => Ok(new_chunk),
+            None => yay(Err((Some(OOB::Reject), new_chunk))),
+            Some(()) => Ok((new_chunk,())),
         }
     }
 }
@@ -535,14 +554,14 @@ impl<A, R, S: InterpParser<A>, C> InterpParser<A>
         chunk: &'a [u8],
         destination: &mut Option<Self::Returning>,
     ) -> ParseResult<'a> {
-        let new_chunk = self.0.parse(&mut state.0, chunk, &mut state.1)?;
+        let new_chunk = self.0.parse(&mut state.0, chunk, &mut state.1)?.0;
         match (self.1)(
             state.1.as_ref().ok_or((Some(OOB::Reject), new_chunk))?,
             destination,
             core::mem::take(&mut state.2).ok_or((Some(OOB::Reject), new_chunk))?,
         ) {
-            None => Err((Some(OOB::Reject), new_chunk)),
-            Some(()) => Ok(new_chunk),
+            None => yay(Err((Some(OOB::Reject), new_chunk))),
+            Some(()) => Ok((new_chunk, ())),
         }
     }
 }
@@ -606,13 +625,13 @@ impl<A, R, S: InterpParser<A>> InterpParser<A>
         chunk: &'a [u8],
         destination: &mut Option<Self::Returning>,
     ) -> ParseResult<'a> {
-        let new_chunk = self.0.parse(&mut state.0, chunk, &mut state.1)?;
+        let new_chunk = self.0.parse(&mut state.0, chunk, &mut state.1)?.0;
         match (self.1)(
             core::mem::take(&mut state.1).ok_or((Some(OOB::Reject), new_chunk))?,
             destination,
         ) {
-            None => Err((Some(OOB::Reject), new_chunk)),
-            Some(()) => Ok(new_chunk),
+            None => yay(Err((Some(OOB::Reject), new_chunk))),
+            Some(()) => Ok((new_chunk,())),
         }
     }
 }
@@ -634,8 +653,8 @@ impl<A, R, S: DynParser<A>> DynParser<A>
     }
 }
 
-fn rej<'a>(cnk: &'a [u8]) -> (PResult<OOB>, RemainingSlice<'a>) {
-    (Some(OOB::Reject), cnk)
+fn rej<'a>(cnk: &'a [u8]) -> Err<Error<RemainingSlice<'a>>> {
+    yay2(Some(OOB::Reject), cnk)
 }
 
 pub struct Preaction<S>(pub fn() -> Option<()>, pub S);
@@ -722,7 +741,7 @@ impl<A, B, S: InterpParser<A>, T: InterpParser<B>> InterpParser<(A, B)>
         loop {
             match state {
                 BindFirst(ref mut s, ref mut r) => {
-                    cursor = self.0.parse(s, cursor, r)?;
+                    cursor = self.0.parse(s, cursor, r)?.0;
                     let r_temp = core::mem::take(r);
                     call_me_maybe(|| {
                         let next = self.1(r_temp.as_ref()?)?;
@@ -733,8 +752,8 @@ impl<A, B, S: InterpParser<A>, T: InterpParser<B>> InterpParser<(A, B)>
                     .ok_or((Some(OOB::Reject), cursor))?;
                 }
                 BindSecond(t, ref mut s) => {
-                    cursor = t.parse(s, cursor, destination)?;
-                    return Ok(cursor);
+                    cursor = t.parse(s, cursor, destination)?.0;
+                    return Ok((cursor,()));
                 }
             }
         }
@@ -796,7 +815,7 @@ impl<A, B, S: InterpParser<A>, T: DynParser<B, Parameter = S::Returning> + Inter
         loop {
             match state {
                 BindFirst(ref mut s, ref mut r) => {
-                    cursor = self.0.parse(s, cursor, r)?;
+                    cursor = self.0.parse(s, cursor, r)?.0;
                     call_me_maybe(|| {
                         let r_temp;
                         if let BindFirst(_, ref mut r) = state {
@@ -818,8 +837,8 @@ impl<A, B, S: InterpParser<A>, T: DynParser<B, Parameter = S::Returning> + Inter
                     .ok_or((Some(OOB::Reject), cursor))?;
                 }
                 BindSecond(ref mut s) => {
-                    cursor = self.1.parse(s, cursor, destination)?;
-                    return Ok(cursor);
+                    cursor = self.1.parse(s, cursor, destination)?.0;
+                    return Ok((cursor,()));
                 }
             }
         }
@@ -886,12 +905,12 @@ impl<A, X: Clone, F: Fn(&mut X, &[u8]) -> (), S: InterpParser<A>> InterpParser<A
                         subparser_state,
                         chunk,
                         &mut destination.as_mut().ok_or(rej(chunk))?.1,
-                    )?;
+                    )?.0;
                     self.1(
                         &mut destination.as_mut().ok_or(rej(new_chunk))?.0,
                         &chunk[0..chunk.len() - new_chunk.len()],
                     );
-                    Ok(new_chunk)
+                    Ok((new_chunk,()))
                 }
             };
         }
@@ -952,7 +971,7 @@ impl<A: InterpParser<C>, B: InterpParser<D>, C, D> InterpParser<(C, D)> for (A, 
                         sub,
                         cursor,
                         &mut destination.as_mut().ok_or(rej(cursor))?.0,
-                    )?;
+                    )?.0;
                     set_from_thunk(state, || {
                         PairState::Second(<B as ParserCommon<D>>::init(&self.1))
                     });
@@ -963,8 +982,8 @@ impl<A: InterpParser<C>, B: InterpParser<D>, C, D> InterpParser<(C, D)> for (A, 
                         sub,
                         cursor,
                         &mut destination.as_mut().ok_or(rej(cursor))?.1,
-                    )?;
-                    break Ok(cursor);
+                    )?.0;
+                    break Ok(((cursor), ()));
                 }
             }
         }
@@ -1042,16 +1061,16 @@ impl<I, S: InterpParser<I>> InterpParser<I> for LengthLimited<S> {
             .subparser
             .parse(&mut state.child_state, &chunk[0..feed_amount], destination)
         {
-            Ok(new_cursor) => {
+            Ok((new_cursor,())) => {
                 let consumed = feed_amount - new_cursor.len();
                 state.bytes_seen += consumed;
                 // If our child has accepted, they better have eaten all their vegetables.
                 if consumed < feed_amount || state.bytes_seen < self.bytes_limit {
-                    return Err((Some(OOB::Reject), new_cursor));
+                    return Err(nom::err::ErrorKind::Fail);
                 }
-                return Ok(&chunk[feed_amount..chunk.len()]);
+                return Ok((&chunk[feed_amount..chunk.len()], ()));
             }
-            Err((None, new_cursor)) => {
+            Err(nom::Err::Incomplete(_)) => {
                 let consumed = feed_amount - new_cursor.len();
                 state.bytes_seen += consumed;
                 // How can you have any pudding if you don't eat your meat?
@@ -1060,8 +1079,16 @@ impl<I, S: InterpParser<I>> InterpParser<I> for LengthLimited<S> {
                 }
                 Err((None, new_cursor))
             }
-            Err((w, new_cursor)) => {
-                let consumed = feed_amount - new_cursor.len();
+            //Err((w, new_cursor)) => {
+            Err(Failure(Error { input })) => {
+                //nom::Err::Error(new_cursor) || nom::Err::Failure(_)) => {
+                let consumed = feed_amount - input.len();
+                state.bytes_seen += consumed;
+                Err((w, new_cursor))
+            }
+            Err(nom::Err(Error { input })) => {
+                //nom::Err::Error(new_cursor) || nom::Err::Failure(_)) => {
+                let consumed = feed_amount - input.len();
                 state.bytes_seen += consumed;
                 Err((w, new_cursor))
             }
@@ -1135,7 +1162,7 @@ where
                         nstate,
                         cursor,
                         length_out,
-                    )?;
+                    )?.0;
                     let len = <usize as TryFrom<<DefaultInterp as ParserCommon<N>>::Returning>>::try_from(length_out.ok_or(rej(cursor))?).or(Err(rej(cursor)))?;
                     match destination {
                         None => {
@@ -1161,7 +1188,7 @@ where
                         passed_cursor,
                         &mut destination.as_mut().ok_or(rej(cursor))?.0,
                     ) {
-                        Ok(new_cursor) => {
+                        Ok(((new_cursor),())) => {
                             let consumed_from_chunk = passed_cursor.len() - new_cursor.len();
                             *consumed += consumed_from_chunk;
                             self.1(
@@ -1169,7 +1196,7 @@ where
                                 &cursor[0..passed_cursor.len() - new_cursor.len()],
                             );
                             if *consumed == *len {
-                                Ok(&cursor[consumed_from_chunk..])
+                                Ok((&cursor[consumed_from_chunk..], ()))
                             } else {
                                 cursor = new_cursor;
                                 destination.as_mut().ok_or(rej(cursor))?.0 = None;
@@ -1179,20 +1206,20 @@ where
                                 continue;
                             }
                         }
-                        Err((None, new_cursor)) => {
-                            let consumed_from_chunk = passed_cursor.len() - new_cursor.len();
+                        Err(nom::Err::Incomplete(_)) => {
+                            let consumed_from_chunk = passed_cursor.len();
                             *consumed += consumed_from_chunk;
                             self.1(
                                 &mut destination.as_mut().ok_or(rej(cursor))?.1,
-                                &cursor[0..passed_cursor.len() - new_cursor.len()],
+                                &cursor[0..passed_cursor.len()],
                             );
                             if *consumed == *len {
-                                Ok(&cursor[consumed_from_chunk..])
+                                Ok((&cursor[consumed_from_chunk..], ()))
                             } else {
-                                Err((None, &cursor[consumed_from_chunk..]))
+                                yay(Err((None, &cursor[consumed_from_chunk..])))
                             }
                         }
-                        Err((Some(OOB::Reject), _)) => {
+                        Err(nom::Err::Error(_) || nom::Err::Failure(_)) => {
                             let cv = *consumed;
                             let lv = *len;
                             set_from_thunk(state, || Failed(cv, lv));
@@ -1202,7 +1229,7 @@ where
                 }
                 Failed(ref mut consumed, len) => {
                     if self.3 {
-                        return Err((Some(OOB::Reject), cursor));
+                        return yay(Err((Some(OOB::Reject), cursor)));
                     } else {
                         use core::cmp::min;
                         let new_cursor = &cursor[min((*len) - (*consumed), cursor.len())..];
@@ -1215,16 +1242,16 @@ where
                             set_from_thunk(&mut destination.as_mut().ok_or(rej(cursor))?.0, || {
                                 None
                             });
-                            Ok(new_cursor)
+                            Ok(((new_cursor),()))
                         } else {
                             let new_consumed = *consumed + cursor.len();
                             let new_len = *len;
                             set_from_thunk(state, || Failed(new_consumed, new_len));
-                            Err((None, new_cursor))
+                            yay(Err((None, new_cursor)))
                         }
                     }
                 }
-                Done => Err((Some(OOB::Reject), cursor)),
+                Done => yay(Err((Some(OOB::Reject), cursor))),
             };
         }
     }

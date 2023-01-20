@@ -114,7 +114,7 @@ pub enum JsonTokenizerState {
 fn get_json_token<'a>(
     state: &mut JsonTokenizerState,
     chunk: &'a [u8],
-) -> Result<(JsonToken<'a>, RemainingSlice<'a>), (PResult<OOB>, RemainingSlice<'a>)> {
+) -> ParseResult1<JsonToken<'a>> {
     let mut cursor = chunk;
     loop {
         match state {
@@ -379,7 +379,7 @@ impl<T, S: JsonInterp<T>> InterpParser<Json<T>> for Json<S> {
             let (token, new_cursor) = tok_r?;
 
             break match <S as JsonInterp<T>>::parse(&self.0, &mut state.1, token, destination) {
-                Ok(()) => Ok(new_cursor),
+                Ok(()) => Ok((new_cursor,())),
                 Err(None) => {
                     cursor = new_cursor;
                     continue;
@@ -392,7 +392,7 @@ impl<T, S: JsonInterp<T>> InterpParser<Json<T>> for Json<S> {
                         core::str::from_utf8(&chunk[0..chunk.len() - cursor.len()])
                             .unwrap_or("UTF8FAILED")
                     );
-                    Err((Some(a), new_cursor))
+                    yay(Err((Some(a), new_cursor)))
                 }
             };
         }
