@@ -137,10 +137,10 @@ impl InterpParser<Byte> for DefaultInterp {
         destination: &mut Option<Self::Returning>,
     ) -> ParseResult<'a> {
         match chunk.split_first() {
-            None => Err((None, chunk)),
+            None => yay(Err((None, chunk))),
             Some((first, rest)) => {
                 *destination = Some(*first);
-                Ok(rest)
+                Ok((rest, ()))
             }
         }
     }
@@ -163,10 +163,10 @@ impl InterpParser<Byte> for DropInterp {
         destination: &mut Option<Self::Returning>,
     ) -> ParseResult<'a> {
         match chunk.split_first() {
-            None => Err((None, chunk)),
+            None => yay(Err((None, chunk))),
             Some((_, rest)) => {
                 *destination = Some(());
-                Ok(rest)
+                Ok(((rest),()))
             }
         }
     }
@@ -213,7 +213,7 @@ impl<I, S: InterpParser<I>, const N: usize> InterpParser<Array<I, N>> for SubInt
                 &mut state.subparser_destination,
             )? {
                 new_chunk => {
-                    remaining = new_chunk;
+                    remaining = new_chunk.0;
                     state.buffer.push(
                         core::mem::take(&mut state.subparser_destination)
                             .ok_or((Some(OOB::Reject), remaining))?,
@@ -1188,7 +1188,7 @@ where
                         passed_cursor,
                         &mut destination.as_mut().ok_or(rej(cursor))?.0,
                     ) {
-                        Ok(((new_cursor),())) => {
+                        Ok((new_cursor,())) => {
                             let consumed_from_chunk = passed_cursor.len() - new_cursor.len();
                             *consumed += consumed_from_chunk;
                             self.1(
