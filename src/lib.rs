@@ -1,6 +1,7 @@
 #![cfg_attr(target_family = "bolos", no_std)]
 #![allow(incomplete_features)]
 #![feature(cfg_version)]
+#![cfg_attr(target_family = "bolos", feature(asm_const))]
 #![cfg_attr(
     not(version("1.56")),
     feature(bindings_after_at),
@@ -62,17 +63,12 @@ pub mod json_interp;
 
 #[cfg(all(target_family = "bolos", test))]
 mod test {
-    #[allow(unused_imports)]
-    use nanos_sdk::TestType;
-    use testmacro::test_item as test;
+    #![cfg_attr(not(version("1.64")), allow(unused))]
+    const RELOC_SIZE: usize = 1;
 
-    #[test]
-    fn set_reloc_size_hack() {
-        unsafe {
-            ::core::arch::asm! {
-                ".global _reloc_size",
-                ".set _reloc_size, 1"
-            }
-        }
+    ::core::arch::global_asm! {
+        ".global _reloc_size",
+        ".set _reloc_size, {reloc_size}",
+        reloc_size = const RELOC_SIZE,
     }
 }
