@@ -59,3 +59,20 @@ pub mod interp_parser;
 
 pub mod json;
 pub mod json_interp;
+
+#[cfg(all(target_family = "bolos", test))]
+mod test {
+    #[allow(unused_imports)]
+    use nanos_sdk::TestType;
+    use testmacro::test_item as test;
+
+    #[test]
+    fn set_reloc_size_hack() {
+        unsafe {
+            ::core::arch::asm! {
+                ".global _reloc_size",
+                ".set _reloc_size, 1"
+            }
+        }
+    }
+}
