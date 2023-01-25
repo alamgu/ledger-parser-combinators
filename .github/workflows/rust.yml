@@ -171,6 +171,10 @@ jobs:
           override: true
           components: rust-src
       - run: echo "$PWD/rsdk/scripts" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y qemu-user-static
+          pip install speculos --extra-index-url https://test.pypi.org/simple/
       - name: Cargo test
         uses: actions-rs/cargo@v1
         with:
