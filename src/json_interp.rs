@@ -733,7 +733,7 @@ fn test_json_interp<T: JsonInterp<A>, A>(
     p: &T,
     pairs: &[(JsonToken, Result<T::Returning, Option<OOB>>)],
 ) where
-    <T as JsonInterp<A>>::Returning: Debug + PartialEq + Clone,
+    <T as ParserCommon<A>>::Returning: Debug + PartialEq + Clone,
 {
     let mut state = T::init(p);
     for (token, expected) in pairs {
@@ -749,7 +749,7 @@ fn test_json_interp_parser<T: InterpParser<A>, A>(
     chunk: &[u8],
     expected: Result<(T::Returning, &[u8]), (Option<OOB>, &[u8])>,
 ) where
-    <T as InterpParser<A>>::Returning: Debug + PartialEq + Clone,
+    <T as ParserCommon<A>>::Returning: Debug + PartialEq + Clone,
 {
     let mut state = T::init(p);
     let mut destination = None;
@@ -1868,12 +1868,14 @@ macro_rules! define_json_struct_interp {
                             match &key[..] {
                                 $(
                                     $crate::json_interp::bstringify!($field) => {
+                                        #[cfg(feature = "logging")]
                                         trace!("json-struct-interp parser: checking key {:?}\n", core::str::from_utf8(key));
                                         $crate::interp_parser::set_from_thunk(state, || [<$name State>]::[<Field $field:camel>](<[<Field $field:camel Interp>] as ParserCommon<$schemaType>>::init(&self.[<field_ $field:snake>])));
                                     }
                                 )*
                                 ,
                                 _ => {
+                                    #[cfg(feature = "logging")]
                                     error!("json-struct-interp parser: Got unexpected key {:?}\n", core::str::from_utf8(key));
                                     return Err(Some($crate::interp_parser::OOB::Reject)) }
                             }

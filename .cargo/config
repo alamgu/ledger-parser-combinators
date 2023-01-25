@@ -1,4 +1,4 @@
-[unstable]
+[target.'cfg(target_os = "bolos")'.unstable]
 build-std = ["core"]
 build-std-features = ["compiler-builtins-mem"]
 
