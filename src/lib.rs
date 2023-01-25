@@ -2,14 +2,11 @@
 #![allow(incomplete_features)]
 #![feature(cfg_version)]
 #![cfg_attr(
-    all(target_family = "bolos", not(version("1.56"))),
+    not(version("1.56")),
     feature(bindings_after_at),
     feature(const_generics)
 )]
-#![cfg_attr(
-    all(target_family = "bolos", version("1.56")),
-    feature(adt_const_params)
-)]
+#![cfg_attr(version("1.56"), feature(adt_const_params))]
 #![cfg_attr(all(target_family = "bolos", test), no_main)]
 #![cfg_attr(target_family = "bolos", feature(custom_test_frameworks))]
 #![reexport_test_harness_main = "test_main"]

@@ -30,6 +30,21 @@ jobs:
         with:
           command: fmt
           args: --all -- --check
+  clippy-native:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          components: rust-src, clippy
+      - run: rustup component add clippy
+      - name: Cargo clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
   clippy:
     runs-on: ubuntu-latest
     strategy:
@@ -65,6 +80,34 @@ jobs:
         with:
           command: clippy
           args: -Z build-std=core -Z build-std-features=compiler-builtins-mem --target ./rsdk/${{ matrix.device }}.json
+  build-native:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          components: rust-src
+      - name: Cargo build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+  test-native:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          components: rust-src
+      - name: Cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
   build:
     runs-on: ubuntu-latest
     strategy:
