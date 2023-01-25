@@ -53,8 +53,6 @@ fn handle_panic(_: &PanicInfo) -> ! {
 
 pub mod core_parsers;
 
-// pub mod forward_parser;
-
 pub mod endianness;
 
 pub mod interp_parser;
