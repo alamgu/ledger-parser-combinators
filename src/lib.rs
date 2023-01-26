@@ -84,7 +84,7 @@ pub mod bcs;
 #[cfg(all(target_family = "bolos", test))]
 mod test {
     #![cfg_attr(not(version("1.64")), allow(unused))]
-    const RELOC_SIZE: usize = 1;
+    const RELOC_SIZE: usize = 10 * 1024;
 
     ::core::arch::global_asm! {
         ".global _reloc_size",
