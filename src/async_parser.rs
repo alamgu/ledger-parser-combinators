@@ -468,6 +468,24 @@ impl<A, B, S: AsyncParser<A, BS>, T: AsyncParser<B, BS>, BS: Readable> AsyncPars
     }
 }
 
+impl<A, B, C, S: HasOutput<A>, T: HasOutput<B>, U: HasOutput<C>> HasOutput<(A, B, C)> for (S, T, U) {
+    type Output = (Option<S::Output>, Option<T::Output>, Option<U::Output>);
+}
+
+impl<A, B, C, S: AsyncParser<A, BS>, T: AsyncParser<B, BS>, U: AsyncParser<C, BS>, BS: Readable> AsyncParser<(A, B, C), BS>
+    for (S, T, U)
+{
+    type State<'c> = impl Future<Output = Self::Output> + 'c where BS: 'c, T: 'c, S: 'c, U: 'c;
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
+        async move {
+            let a = self.0.parse(input).await;
+            let b = self.1.parse(input).await;
+            let c = self.2.parse(input).await;
+            (Some(a), Some(b), Some(c))
+        }
+    }
+}
+
 pub trait LengthDelimitedParser<Schema, BS: Readable>: HasOutput<Schema> {
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c>;
     type State<'c>: Future<Output = Self::Output>
