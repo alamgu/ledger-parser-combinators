@@ -566,4 +566,3 @@ impl<Schema, BS: Readable> LengthDelimitedParser<Schema, BS> for DropInterp {
         }
     }
 }
-

@@ -1,4 +1,4 @@
-[unstable]
+[target.'cfg(target_os = "bolos")'.unstable]
 build-std = ["core"]
 build-std-features = ["compiler-builtins-mem"]
 
@@ -9,7 +9,7 @@ rustflags = [
   "-C", "embed-bitcode",
   "--emit=metadata,link,obj,llvm-ir,llvm-bc"
 ]
-runner = "./speculos-wrapper -m nanosp -k 1.0.3 "
+runner = "speculos --display headless -m nanosp -k 1.0.3 "
 
 [target.nanos]
 rustflags = [
@@ -18,7 +18,7 @@ rustflags = [
   "-C", "embed-bitcode",
   "--emit=metadata,link,obj,llvm-ir,llvm-bc"
 ]
-runner = "./speculos-wrapper -m nanos "
+runner = "speculos --display headless -m nanos "
 
 [target.nanox]
 rustflags = [
@@ -27,7 +27,7 @@ rustflags = [
   "-C", "embed-bitcode",
   "--emit=metadata,link,obj,llvm-ir,llvm-bc"
 ]
-runner = "./speculos-wrapper -m nanox "
+runner = "speculos --display headless -m nanox "
 
 [alias]
 tt = "test --features extra_debug"
