@@ -766,6 +766,12 @@ mod test {
     // trace_macros!(true);
     // trace_macros!(false);
 
+    #[cfg(target_family = "bolos")]
+    #[allow(unused_imports)]
+    use nanos_sdk::TestType;
+    #[cfg(target_family = "bolos")]
+    use testmacro::test_item as test;
+
     #[derive(Clone)]
     struct TestReadable<const N: usize>([u8; N], usize);
     impl<const M: usize> Readable for TestReadable<M> {
@@ -779,6 +785,12 @@ mod test {
             } else {
                 panic!("Read past end of input");
             }
+        }
+    }
+
+    impl<const N: usize> ReadableLength for TestReadable<N> {
+        fn index(&self) -> usize {
+            self.1
         }
     }
 
