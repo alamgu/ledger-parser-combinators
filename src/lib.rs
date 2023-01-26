@@ -89,3 +89,4 @@ pub mod json_interp;
 pub mod async_parser;
 
 pub mod protobufs;
+pub mod bcs;
