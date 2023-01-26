@@ -89,3 +89,108 @@ impl<BS: Readable> AsyncParser<ULEB128, BS> for DefaultInterp {
 }
 
 pub type Vec<T, const N: usize> = DArray<ULEB128, T, N>;
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use core::future::Future;
+    pub use num_traits::FromPrimitive;
+    // trace_macros!(true);
+    // trace_macros!(false);
+
+    #[cfg(target_family = "bolos")]
+    #[allow(unused_imports)]
+    use nanos_sdk::TestType;
+    #[cfg(target_family = "bolos")]
+    use testmacro::test_item as test;
+
+    #[derive(Clone)]
+    struct TestReadable<const N: usize>([u8; N], usize);
+    impl<const M: usize> Readable for TestReadable<M> {
+        type OutFut<'a, const N: usize> = impl 'a + Future<Output = [u8; N]>;
+        fn read<'a: 'b, 'b, const N: usize>(&'a mut self) -> Self::OutFut<'b, N> {
+            if self.1 + N <= self.0.len() {
+                let offset = self.1;
+                self.1 += N;
+                use core::convert::TryInto;
+                core::future::ready(self.0[offset..self.1].try_into().unwrap())
+            } else {
+                panic!("Read past end of input");
+            }
+        }
+    }
+
+    impl<const N: usize> ReadableLength for TestReadable<N> {
+        fn index(&self) -> usize {
+            self.1
+        }
+    }
+
+    use core::task::*;
+
+    static RAW_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
+        |a| RawWaker::new(a, &RAW_WAKER_VTABLE),
+        |_| {},
+        |_| {},
+        |_| {},
+    );
+
+    fn poll_once<F: Future>(mut input: F) -> core::task::Poll<F::Output> {
+        let waker = unsafe { Waker::from_raw(RawWaker::new(&(), &RAW_WAKER_VTABLE)) };
+        let mut ctxd = Context::from_waker(&waker);
+        let mut pinned = unsafe { core::pin::Pin::new_unchecked(&mut input) };
+        pinned.as_mut().poll(&mut ctxd)
+    }
+
+    #[test]
+    fn test_varint() {
+        let mut input = TestReadable([0, 0, 0], 0);
+        assert_eq!(poll_once(ULEB128.def_parse(&mut input)), Poll::Ready(0));
+    }
+    #[test]
+    fn test_varint2() {
+        let mut input = TestReadable([255, 0, 0], 0);
+        assert_eq!(poll_once(ULEB128.def_parse(&mut input)), Poll::Pending);
+    }
+    #[test]
+    fn test_varint3() {
+        let mut input = TestReadable([254, 0, 0], 0);
+        assert_eq!(poll_once(ULEB128.def_parse(&mut input)), Poll::Pending);
+    }
+    #[test]
+    fn test_varint4() {
+        let mut input = TestReadable([255, 0, 0], 0);
+        assert_eq!(poll_once(ULEB128.def_parse(&mut input)), Poll::Pending);
+    }
+    #[test]
+    fn test_varint5() {
+        let mut input = TestReadable([0, 0, 0], 0);
+        assert_eq!(poll_once(ULEB128.def_parse(&mut input)), Poll::Ready(0));
+    }
+    #[test]
+    fn test_varint6() {
+        let mut input = TestReadable([1, 0, 0], 0);
+        assert_eq!(poll_once(ULEB128.def_parse(&mut input)), Poll::Ready(1));
+    }
+    #[test]
+    fn test_varint7() {
+        let mut input = TestReadable([2, 0, 0], 0);
+        assert_eq!(poll_once(ULEB128.def_parse(&mut input)), Poll::Ready(2));
+    }
+    #[test]
+    fn test_varint8() {
+        let mut input = TestReadable([128, 128, 128, 128, 2, 0, 0], 0);
+        assert_eq!(
+            poll_once(ULEB128.def_parse(&mut input)),
+            Poll::Ready(1 << (7 * 4 + 1))
+        );
+    }
+    #[test]
+    fn test_varint9() {
+        let mut input = TestReadable([128, 128, 128, 128, 2, 0, 0], 0);
+        assert_eq!(
+            poll_once(ULEB128.def_parse(&mut input)),
+            Poll::Ready(1 << (7 * 4 + 1))
+        );
+    }
+}
