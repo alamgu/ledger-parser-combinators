@@ -9,6 +9,7 @@
 #![feature(type_alias_impl_trait)]
 #![feature(generic_const_exprs)]
 #![feature(cfg_version)]
+#![feature(macro_metavar_expr)]
 #![cfg_attr(target_family = "bolos", feature(asm_const))]
 #![cfg_attr(
     not(version("1.56")),
@@ -78,8 +79,8 @@ pub mod json_interp;
 
 pub mod async_parser;
 
-pub mod protobufs;
 pub mod bcs;
+pub mod protobufs;
 
 #[cfg(all(target_family = "bolos", test))]
 mod test {

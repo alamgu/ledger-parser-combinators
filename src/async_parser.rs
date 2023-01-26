@@ -450,41 +450,43 @@ impl<
     }
 }
 
-impl<A, B, S: HasOutput<A>, T: HasOutput<B>> HasOutput<(A, B)> for (S, T) {
-    type Output = (Option<S::Output>, Option<T::Output>);
-}
+pub use paste::paste;
 
 /// Pairs of parsers parse the sequence of their two schemas.
-impl<A, B, S: AsyncParser<A, BS>, T: AsyncParser<B, BS>, BS: Readable> AsyncParser<(A, B), BS>
-    for (S, T)
-{
-    type State<'c> = impl Future<Output = Self::Output> + 'c where BS: 'c, T: 'c, S: 'c;
-    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
-        async move {
-            let t = self.0.parse(input).await;
-            let s = self.1.parse(input).await;
-            (Some(t), Some(s))
+macro_rules! tuple_impls {
+    // Stopping criteria (1-ary tuple)
+    ($T:ident) => {
+        tuple_impls!(@impl $T);
+    };
+    // Running criteria (n-ary tuple, with n >= 2)
+    ($T:ident $( $U:ident )+) => {
+        tuple_impls!($( $U )+);
+        tuple_impls!(@impl $T $( $U )+);
+    };
+    // "Private" internal implementation
+    (@impl $( $T:ident )+) => {
+        $crate::async_parser::paste! {
+
+            impl<$($T,)+ $([<State $T>]: HasOutput<$T>,)+> HasOutput<($($T,)+)> for ($([<State $T>] ,)+) {
+                type Output = ($(Option<[<State $T>]::Output>,)+);
+            }
+
+            impl<$($T,)+ $([<State $T>]: AsyncParser<$T, BS>,)+ BS: Readable> AsyncParser<($($T,)+), BS>
+                for ($([<State $T>],)+)
+            {
+                type State<'c> = impl Future<Output = Self::Output> + 'c where BS: 'c, $([<State $T>] : 'c,)+;
+                fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
+                    async move {
+                        $(let [<$T:lower>] = self.${index()}.parse(input).await;)+
+                        ($(Some([<$T:lower>]),)+)
+                    }
+                }
+            }
         }
     }
 }
 
-impl<A, B, C, S: HasOutput<A>, T: HasOutput<B>, U: HasOutput<C>> HasOutput<(A, B, C)> for (S, T, U) {
-    type Output = (Option<S::Output>, Option<T::Output>, Option<U::Output>);
-}
-
-impl<A, B, C, S: AsyncParser<A, BS>, T: AsyncParser<B, BS>, U: AsyncParser<C, BS>, BS: Readable> AsyncParser<(A, B, C), BS>
-    for (S, T, U)
-{
-    type State<'c> = impl Future<Output = Self::Output> + 'c where BS: 'c, T: 'c, S: 'c, U: 'c;
-    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
-        async move {
-            let a = self.0.parse(input).await;
-            let b = self.1.parse(input).await;
-            let c = self.2.parse(input).await;
-            (Some(a), Some(b), Some(c))
-        }
-    }
-}
+tuple_impls!(E D C B A Z Y X W V U T);
 
 pub trait LengthDelimitedParser<Schema, BS: Readable>: HasOutput<Schema> {
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c>;

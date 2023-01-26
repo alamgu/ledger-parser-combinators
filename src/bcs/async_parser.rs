@@ -24,7 +24,6 @@ impl<BS: Readable> AsyncParser<bool, BS> for DefaultInterp {
     }
 }
 
-
 /*
 #### ULEB128-Encoded Integers
 
