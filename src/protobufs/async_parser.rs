@@ -884,6 +884,7 @@ mod test {
         }
     }
 
+    #[cfg(not(version("1.68")))]
     any_of! {
         FooAnyInterp {
             TxBody: TxBody = b"some.uri.here",
