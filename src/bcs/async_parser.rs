@@ -229,4 +229,16 @@ mod test {
         let mut input = TestReadable([0x8f, 0x4a, 0x8f, 0x4a], 0);
         assert_eq!(poll_once((ULEB128, ULEB128).def_parse(&mut input)), Poll::Ready((9487, 9487)));
     }
+
+    #[test]
+    fn test_triple() {
+        let mut input = TestReadable([0x8f, 0x4a, 0x8f, 0x4a, 0x80, 0x80, 0x80, 0x80, 0x01], 0);
+        assert_eq!(poll_once((ULEB128, ULEB128, ULEB128).def_parse(&mut input)), Poll::Ready((9487, 9487, 2_u32.pow(28))));
+    }
+
+    #[test]
+    fn test_nested() {
+        let mut input = TestReadable([0x8f, 0x4a, 0x8f, 0x4a, 0x80, 0x80, 0x80, 0x80, 0x01], 0);
+        assert_eq!(poll_once((ULEB128, (ULEB128, ULEB128)).def_parse(&mut input)), Poll::Ready((9487, (9487, 2_u32.pow(28)))));
+    }
 }
