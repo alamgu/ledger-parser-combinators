@@ -223,4 +223,10 @@ mod test {
         let mut input = TestReadable([0x8f, 0x4a], 0);
         assert_eq!(poll_once(ULEB128.def_parse(&mut input)), Poll::Ready(9487));
     }
+
+    #[test]
+    fn test_pair_varint_9487() {
+        let mut input = TestReadable([0x8f, 0x4a, 0x8f, 0x4a], 0);
+        assert_eq!(poll_once((ULEB128, ULEB128).def_parse(&mut input)), Poll::Ready((9487, 9487)));
+    }
 }

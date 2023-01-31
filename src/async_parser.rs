@@ -467,18 +467,39 @@ macro_rules! tuple_impls {
     (@impl $( $T:ident )+) => {
         $crate::async_parser::paste! {
 
-            impl<$($T,)+ $([<State $T>]: HasOutput<$T>,)+> HasOutput<($($T,)+)> for ($([<State $T>] ,)+) {
-                type Output = ($(Option<[<State $T>]::Output>,)+);
+            impl<$([<Schema $T>],)+ $([<Parser $T>]: HasOutput<[<Schema $T>]>,)+> HasOutput<($([<Schema $T>],)+)> for ($([<Parser $T>] ,)+) {
+                type Output = ($([<Parser $T>]::Output,)+);
             }
 
-            impl<$($T,)+ $([<State $T>]: AsyncParser<$T, BS>,)+ BS: Readable> AsyncParser<($($T,)+), BS>
-                for ($([<State $T>],)+)
+            impl<$([<Schema $T>],)+ $([<Parser $T>]: AsyncParser<[<Schema $T>], BS>,)+ BS: Readable> AsyncParser<($([<Schema $T>],)+), BS>
+                for ($([<Parser $T>],)+)
             {
-                type State<'c> = impl Future<Output = Self::Output> + 'c where BS: 'c, $([<State $T>] : 'c,)+;
+                type State<'c> = impl Future<Output = Self::Output> + 'c where BS: 'c, $([<Parser $T>] : 'c,)+;
                 fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
                     async move {
-                        $(let [<$T:lower>] = self.${index()}.parse(input).await;)+
-                        ($(Some([<$T:lower>]),)+)
+                        $(let [<output_ $T:lower>] = self.${index()}.parse(input).await;)+
+                        ($([<output_ $T:lower>],)+)
+                    }
+                }
+            }
+
+            impl<$([<Schema $T>],)+> HasOutput<($([<Schema $T>],)+)> for DefaultInterp
+            where
+                $(DefaultInterp: HasOutput<[<Schema $T>]>,)+
+            {
+                type Output = ($(<DefaultInterp as HasOutput<[<Schema $T>]>>::Output,)+);
+            }
+
+            impl<$([<Schema $T>],)+ BS: Readable> AsyncParser<($([<Schema $T>],)+), BS>
+                for DefaultInterp
+            where
+                $(DefaultInterp: AsyncParser<[<Schema $T>], BS>,)+
+            {
+                type State<'c> = impl Future<Output = Self::Output> + 'c where BS: 'c;
+                fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
+                    async move {
+                        $(let [<output_ $T:lower>] = <DefaultInterp as AsyncParser<[<Schema $T>], BS>>::parse(&DefaultInterp, input).await;)+
+                        ($([<output_ $T:lower>],)+)
                     }
                 }
             }
