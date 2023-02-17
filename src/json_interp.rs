@@ -1298,7 +1298,7 @@ impl<T, S: ParserCommon<T>, RV: Debug + Summable<<S as ParserCommon<T>>::Returni
 impl<
         T,
         S: JsonInterp<T> + DynParser<T, Parameter = RV>,
-        RV: Copy + Debug + Summable<<S as ParserCommon<T>>::Returning>,
+        RV: Clone + Debug + Summable<<S as ParserCommon<T>>::Returning>,
     > JsonInterp<JsonArray<T>> for SubInterpMFold<S, RV>
 {
     #[inline(never)]
@@ -1324,7 +1324,7 @@ impl<
                         Item(ref mut s, ref mut sub_destination) => {
                             <S as DynParser<T>>::init_param(
                                 &self.0,
-                                destination.ok_or(Some(OOB::Reject))?,
+                                destination.as_ref().ok_or(Some(OOB::Reject))?.clone(),
                                 s,
                                 sub_destination,
                             );
@@ -1349,7 +1349,7 @@ impl<
                         Item(ref mut s, ref mut sub_destination) => {
                             <S as DynParser<T>>::init_param(
                                 &self.0,
-                                destination.ok_or(Some(OOB::Reject))?,
+                                destination.as_ref().ok_or(Some(OOB::Reject))?.clone(),
                                 s,
                                 sub_destination,
                             );
