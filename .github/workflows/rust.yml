@@ -13,6 +13,62 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  clippy-native:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Install toolchains
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          components: rust-src, clippy
+      - run: rustup component add clippy
+      - name: Cargo clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+
+  clippy:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        target: ["nanos", "nanox", "nanosplus"]
+
+    env:
+      OBJCOPY: arm-none-eabi-objcopy
+      NM: arm-none-eabi-nm
+
+    steps:
+      - name: arm-none-eabi-gcc
+        uses: fiam/arm-none-eabi-gcc@v1.0.3
+        with:
+          release: '9-2019-q4'
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Checkout SDK (targets)
+        uses: actions/checkout@v3
+        with:
+          repository: 'alamgu/ledger-nanos-sdk'
+          ref: memory-fixes
+          path: rsdk
+      - name: Install toolchains
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          components: rust-src, clippy
+      - name: Remove --emit from config before clippy
+        # otherwise it does not work
+        run: sed -i '/--emit/d' ./.cargo/config
+      - name: Cargo clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -Z build-std=core -Z build-std-features=compiler-builtins-mem --target ./rsdk/${{ matrix.target }}.json
   fmt:
     runs-on: ubuntu-latest
     steps:
@@ -23,68 +79,19 @@ jobs:
           toolchain: nightly
           override: true
           components: rust-src, rustfmt
-      - run: rustup component add rustfmt
       - name: Cargo fmt
         uses: actions-rs/cargo@v1
         with:
           command: fmt
           args: --all -- --check
-  clippy-native:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: true
-          components: rust-src, clippy
-      - run: rustup component add clippy
-      - name: Cargo clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-  clippy:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        device: [nanos, nanox, nanosplus]
-    env:
-      OBJCOPY: arm-none-eabi-objcopy
-      NM: arm-none-eabi-nm
-    steps:
-      - name: arm-none-eabi-gcc
-        uses: fiam/arm-none-eabi-gcc@v1.0.3
-        with:
-          release: '9-2019-q4'
-      - name: Checkout
-        uses: actions/checkout@v3
-      - name: Checkout SDK (targets)
-        uses: actions/checkout@v3
-        with:
-          repository: 'alamgu/ledger-nanos-sdk'
-          ref: memory-fixes
-          path: rsdk
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: true
-          components: rust-src, clippy
-      - run: rustup component add clippy
-      - name: Remove --emit from config before clippy
-        # otherwise it does not work
-        run: sed -i '/--emit/d' ./.cargo/config
-      - name: Cargo clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: -Z build-std=core -Z build-std-features=compiler-builtins-mem --target ./rsdk/${{ matrix.device }}.json
+
   build-native:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - name: Install toolchains
+        uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
           override: true
@@ -93,12 +100,14 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
+
   test-native:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - name: Install toolchains
+        uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
           override: true
@@ -107,14 +116,17 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
+
   build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        device: [nanos, nanox, nanosplus]
+        target: ["nanos", "nanox", "nanosplus"]
+
     env:
       OBJCOPY: arm-none-eabi-objcopy
       NM: arm-none-eabi-nm
+
     steps:
       - name: arm-none-eabi-gcc
         uses: fiam/arm-none-eabi-gcc@v1.0.3
@@ -130,7 +142,8 @@ jobs:
           path: rsdk
       - name: Install clang
         run: sudo apt-get update && sudo apt install -y clang
-      - uses: actions-rs/toolchain@v1
+      - name: Install toolchains
+        uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
           override: true
@@ -140,15 +153,18 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: -Z build-std=core -Z build-std-features=compiler-builtins-mem --target ./rsdk/${{ matrix.device }}.json
+          args: -Z build-std=core -Z build-std-features=compiler-builtins-mem --target ./rsdk/${{ matrix.target }}.json
+
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        device: [nanos, nanox, nanosplus]
+        target: ["nanos", "nanox", "nanosplus"]
+
     env:
       OBJCOPY: arm-none-eabi-objcopy
       NM: arm-none-eabi-nm
+
     steps:
       - name: arm-none-eabi-gcc
         uses: fiam/arm-none-eabi-gcc@v1.0.3
@@ -164,7 +180,8 @@ jobs:
           path: rsdk
       - name: Install clang
         run: sudo apt-get update && sudo apt install -y clang
-      - uses: actions-rs/toolchain@v1
+      - name: Install toolchains
+        uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
           override: true
@@ -174,8 +191,8 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y qemu-user-static
           pip install speculos --extra-index-url https://test.pypi.org/simple/
-      - name: Cargo test
+      - name: Unit tests
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: -Z build-std=core -Z build-std-features=compiler-builtins-mem --target ./rsdk/${{ matrix.device }}.json
+          args: -Z build-std=core -Z build-std-features=compiler-builtins-mem --target ./rsdk/${{ matrix.target }}.json
