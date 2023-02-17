@@ -12,27 +12,29 @@ opt-level = 0
 opt-level = 0
 
 [dependencies]
-
 arrayvec = { version = "0.7.1", default-features = false }
 generic-array = { version = "0.14.4", default-features = false }
 paste = "1.0"
 bstringify = "0.1.2"
 enum-init = { git = "https://github.com/alamgu/enum-init" }
+num-traits = { version = "0.2.14", default-features = false }
+num-derive = "0.3.3"
+trie-enum = { git = "https://github.com/alamgu/trie-enum" }
+pin-project = "1.0.12"
 
 [dependencies.ledger-log]
 git = "https://github.com/alamgu/ledger-log"
-features = ["log_trace"]
 optional = true
 
 [features]
 "logging" = [ "ledger-log" ]
 
-[target.'cfg(target_family = "bolos")'.dependencies.nanos_sdk]
-git = "https://github.com/LedgerHQ/ledger-nanos-sdk.git"
-features = [ "speculos" ]
+[target.'cfg(target_family = "bolos")'.dependencies]
+nanos_sdk = { git = "https://github.com/LedgerHQ/ledger-nanos-sdk.git" }
 
 [target.'cfg(target_family = "bolos")'.dev-dependencies]
 testmacro = { git = "https://github.com/yhql/testmacro"}
+nanos_sdk = { git = "https://github.com/LedgerHQ/ledger-nanos-sdk.git", features = ["speculos"] }
 
 [patch."https://github.com/LedgerHQ/ledger-nanos-sdk.git".nanos_sdk]
 git = "https://github.com/alamgu/ledger-nanos-sdk.git"

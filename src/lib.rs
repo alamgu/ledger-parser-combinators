@@ -1,5 +1,13 @@
 #![cfg_attr(target_family = "bolos", no_std)]
 #![allow(incomplete_features)]
+#![feature(min_specialization)]
+#![feature(auto_traits)]
+#![feature(negative_impls)]
+#![feature(trace_macros)]
+#![feature(log_syntax)]
+#![feature(pin_macro)]
+#![feature(type_alias_impl_trait)]
+#![feature(generic_const_exprs)]
 #![feature(cfg_version)]
 #![cfg_attr(target_family = "bolos", feature(asm_const))]
 #![cfg_attr(
@@ -8,6 +16,8 @@
     feature(const_generics)
 )]
 #![cfg_attr(version("1.56"), feature(adt_const_params))]
+#![cfg_attr(not(version("1.64")), feature(future_poll_fn))]
+#![cfg_attr(not(version("1.65")), feature(generic_associated_types))]
 #![cfg_attr(all(target_family = "bolos", test), no_main)]
 #![cfg_attr(target_family = "bolos", feature(custom_test_frameworks))]
 #![reexport_test_harness_main = "test_main"]
@@ -16,6 +26,9 @@
 
 #[macro_use]
 extern crate enum_init;
+
+#[macro_use]
+extern crate num_derive;
 
 //#[cfg(all(not(target_os = "linux"), test))]
 //use nanos_sdk::exit_app;
@@ -55,16 +68,22 @@ fn handle_panic(_: &PanicInfo) -> ! {
 pub mod core_parsers;
 
 pub mod endianness;
+pub mod interp;
+pub mod schema;
 
 pub mod interp_parser;
 
 pub mod json;
 pub mod json_interp;
 
+pub mod async_parser;
+
+pub mod protobufs;
+
 #[cfg(all(target_family = "bolos", test))]
 mod test {
     #![cfg_attr(not(version("1.64")), allow(unused))]
-    const RELOC_SIZE: usize = 1;
+    const RELOC_SIZE: usize = 10 * 1024;
 
     ::core::arch::global_asm! {
         ".global _reloc_size",
