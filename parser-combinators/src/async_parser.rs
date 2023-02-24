@@ -428,3 +428,102 @@ impl<A, B, S: AsyncParser<A, BS>, T: AsyncParser<B, BS>, BS: Readable> AsyncPars
         }
     }
 }
+
+pub trait LengthDelimitedParser<Schema, BS: Readable>: HasOutput<Schema> {
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c>;
+    type State<'c>: Future<Output = Self::Output>
+    where
+        BS: 'c,
+        Self: 'c;
+}
+
+impl<
+        T,
+        S: LengthDelimitedParser<T, BS>,
+        R,
+        BS: Readable,
+        F: Fn(<S as HasOutput<T>>::Output) -> Option<R>,
+    > LengthDelimitedParser<T, BS> for Action<S, F>
+{
+    type State<'c> = impl Future<Output = Self::Output> + 'c where BS: 'c, F: 'c, S: 'c;
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
+        async move {
+            match self.1(self.0.parse(input, length).await) {
+                Some(a) => a,
+                None => reject_on(core::file!(), core::line!()).await,
+            }
+        }
+    }
+}
+
+impl<
+        T,
+        S: LengthDelimitedParser<T, BS>,
+        R,
+        F: Fn(<S as HasOutput<T>>::Output) -> Fut,
+        Fut: Future<Output = Option<R>>,
+        BS: Readable,
+    > LengthDelimitedParser<T, BS> for FutAction<S, F>
+{
+    type State<'c> = impl 'c + Future<Output = Self::Output> where BS: 'c, F: 'c, S: 'c;
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
+        async move {
+            match self.1(self.0.parse(input, length).await).await {
+                Some(a) => a,
+                None => reject().await,
+            }
+        }
+    }
+}
+
+struct Bind<S, F>(S, F);
+
+impl<T, S: HasOutput<T>, R, Fut: Future<Output = R>, F: Fn(<S as HasOutput<T>>::Output) -> Fut>
+    HasOutput<T> for Bind<S, F>
+{
+    type Output = Fut::Output;
+}
+
+impl<
+        T,
+        S: LengthDelimitedParser<T, BS>,
+        R,
+        BS: Readable,
+        Fut: Future<Output = R>,
+        F: Fn(<S as HasOutput<T>>::Output) -> Fut,
+    > LengthDelimitedParser<T, BS> for Bind<S, F>
+{
+    type State<'c> = impl Future<Output = Self::Output> + 'c where BS: 'c, F: 'c, S: 'c;
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
+        async move { self.1(self.0.parse(input, length).await).await }
+    }
+}
+impl<
+        T,
+        S: AsyncParser<T, BS>,
+        R,
+        BS: Readable,
+        Fut: Future<Output = R>,
+        F: Fn(<S as HasOutput<T>>::Output) -> Fut,
+    > AsyncParser<T, BS> for Bind<S, F>
+{
+    type State<'c> = impl Future<Output = Self::Output> + 'c where BS: 'c, F: 'c, S: 'c;
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
+        async move { self.1(self.0.parse(input).await).await }
+    }
+}
+
+impl<Schema, BS: Readable> LengthDelimitedParser<Schema, BS> for DropInterp {
+    type State<'c> = impl Future<Output = Self::Output> + 'c where BS: 'c;
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
+        async move {
+            #[cfg(feature = "logging")]
+            trace!("Dropping");
+            for _ in 0..length {
+                let [_]: [u8; 1] = input.read().await;
+            }
+            #[cfg(feature = "logging")]
+            trace!("Dropped");
+        }
+    }
+}

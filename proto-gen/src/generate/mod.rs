@@ -93,7 +93,7 @@ message SignDoc {
         assert_eq!(
             string_from_path(&mod_dir.join("mod.rs")),
             r#"#[allow(unused_imports)]
-use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
+use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, LengthDelimitedParser, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
 
@@ -106,7 +106,7 @@ pub mod cosmos;
         assert_eq!(
             string_from_path(&mod_dir.join("cosmos/mod.rs")),
             r#"#[allow(unused_imports)]
-use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
+use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, LengthDelimitedParser, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
 
@@ -117,7 +117,7 @@ pub mod tx;
         assert_eq!(
             string_from_path(&mod_dir.join("cosmos/tx/mod.rs")),
             r#"#[allow(unused_imports)]
-use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
+use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, LengthDelimitedParser, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
 
@@ -128,7 +128,7 @@ pub mod v1beta1;
         assert_eq!(
             string_from_path(&mod_dir.join("cosmos/tx/v1beta1/mod.rs")),
             r#"#[allow(unused_imports)]
-use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
+use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, LengthDelimitedParser, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
 
@@ -166,7 +166,7 @@ message Test { }
         assert_eq!(
             string_from_path(&mod_dir.join("mod.rs")),
             r#"#[allow(unused_imports)]
-use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
+use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, LengthDelimitedParser, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
 
@@ -220,7 +220,7 @@ message Bizz {
         assert_eq!(
             string_from_path(&mod_dir.join("mod.rs")),
             r#"#[allow(unused_imports)]
-use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
+use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, LengthDelimitedParser, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
 
@@ -248,7 +248,7 @@ define_message! { @impl
         assert_eq!(
             string_from_path(&mod_dir.join("test/mod.rs")),
             r#"#[allow(unused_imports)]
-use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
+use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, LengthDelimitedParser, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
 
@@ -267,7 +267,7 @@ define_message! { @impl
         assert_eq!(
             string_from_path(&mod_dir.join("test/foo/mod.rs")),
             r#"#[allow(unused_imports)]
-use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
+use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, LengthDelimitedParser, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
 
@@ -314,7 +314,7 @@ define_message! { @impl
         assert_eq!(
             string_from_path(&mod_dir.join("mod.rs")),
             r#"#[allow(unused_imports)]
-use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
+use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, LengthDelimitedParser, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
 
@@ -327,7 +327,7 @@ pub mod google;
         assert_eq!(
             string_from_path(&mod_dir.join("google/mod.rs")),
             r#"#[allow(unused_imports)]
-use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
+use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, LengthDelimitedParser, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
 
@@ -338,7 +338,7 @@ pub mod protobuf;
         assert_eq!(
             string_from_path(&mod_dir.join("google/protobuf/field/mod.rs")),
             r#"#[allow(unused_imports)]
-use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
+use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, LengthDelimitedParser, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
 
@@ -380,7 +380,7 @@ define_enum! {
         assert_eq!(
             string_from_path(&mod_dir.join("google/protobuf/mod.rs")),
             r#"#[allow(unused_imports)]
-use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, reject}, protobufs::{schema::*, async_parser::*}};
+use ledger_parser_combinators::{define_message, define_enum, interp_parser::DefaultInterp, async_parser::{HasOutput, AsyncParser, Readable, LengthDelimitedParser, reject}, protobufs::{schema::*, async_parser::*}};
 #[allow(unused_imports)]
 use core::future::Future;
 
