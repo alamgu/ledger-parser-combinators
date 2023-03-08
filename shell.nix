@@ -1,9 +1,8 @@
-{ pkgs ? import <nixpkgs> {}
-}:
 let
-  ledger-platform = import ./dep/ledger-platform {};
+  alamgu = import ./dep/alamgu {};
+  inherit (alamgu) pkgs;
 in
-ledger-platform.rustShell.overrideAttrs(old: {
+alamgu.rustShell.overrideAttrs (old: {
   shellHook = (old.shellHook or "") + ''
      export PATH=${pkgs.protobuf}/bin:$PATH
   '';
