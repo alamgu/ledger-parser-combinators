@@ -158,7 +158,10 @@ where
         async move {
             let mut accumulator = ArrayVec::<<S as HasOutput<T>>::Output, N>::new();
             while !accumulator.is_full() {
-                accumulator.push(<S as AsyncParser<T, BS>>::parse(&self.0, input).await);
+                match accumulator.try_push(<S as AsyncParser<T, BS>>::parse(&self.0, input).await) {
+                    Ok(rv) => rv,
+                    _ => reject().await,
+                };
             }
             match accumulator.take().into_inner() {
                 Ok(rv) => rv,
@@ -177,7 +180,7 @@ impl<BS: Readable> AsyncParser<Byte, BS> for DefaultInterp {
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
         async move {
             let [u] = input.read().await;
-            return u;
+            u
         }
     }
 }
@@ -270,7 +273,10 @@ where
             };
             let mut accumulator = ArrayVec::new();
             for _ in 0..length {
-                accumulator.push(self.0.parse(input).await);
+                match accumulator.try_push(self.0.parse(input).await) {
+                    Ok(rv) => rv,
+                    _ => reject().await,
+                };
             }
             accumulator
         }
@@ -417,7 +423,7 @@ impl<A, X, F, S: HasOutput<A>> HasOutput<A> for ObserveBytes<X, F, S> {
 /// Used to support ObserveBytes for async parsers.
 pub struct HashIntercept<BS, X, F>(pub BS, pub X, pub F);
 
-impl<BS: 'static + Readable, X: 'static, F: Fn(&mut X, &[u8]) -> ()> Readable
+impl<BS: 'static + Readable, X: 'static, F: Fn(&mut X, &[u8])> Readable
     for HashIntercept<BS, X, F>
 {
     type OutFut<'a, const N: usize> = impl core::future::Future<Output = [u8; N]> + 'a where F: 'a;
@@ -433,7 +439,7 @@ impl<BS: 'static + Readable, X: 'static, F: Fn(&mut X, &[u8]) -> ()> Readable
 /// ObserveBytes for AsyncParser operates by passing a HashIntercept to the sub-parser.
 impl<
         X: 'static,
-        F: Fn(&mut X, &[u8]) -> () + Copy,
+        F: Fn(&mut X, &[u8]) + Copy,
         S: AsyncParser<A, HashIntercept<BS, X, F>>,
         A,
         BS: 'static + Readable + Clone,

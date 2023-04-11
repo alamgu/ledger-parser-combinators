@@ -44,7 +44,7 @@ pub fn skip_varint<'a: 'c, 'c, BS: Readable>(input: &'a mut BS) -> impl Future<O
         loop {
             let [current]: [u8; 1] = input.read().await;
             if current & 0x80 == 0 {
-                return ();
+                return;
             }
         }
     }
@@ -111,8 +111,8 @@ impl<const N: usize> HasOutput<String> for Buffer<N> {
     type Output = ArrayVec<u8, N>;
 }
 
-async fn read_arrayvec_n<'a, const N: usize, BS: Readable>(
-    input: &'a mut BS,
+async fn read_arrayvec_n<const N: usize, BS: Readable>(
+    input: &mut BS,
     mut length: usize,
 ) -> ArrayVec<u8, N> {
     if length > N {
@@ -130,8 +130,7 @@ async fn read_arrayvec_n<'a, const N: usize, BS: Readable>(
 
 impl<const N: usize, BS: Readable> LengthDelimitedParser<String, BS> for Buffer<N> {
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS, length: usize) -> Self::State<'c> {
-        let f = read_arrayvec_n(input, length);
-        f
+        read_arrayvec_n(input, length)
     }
     type State<'c> = impl Future<Output = Self::Output> + 'c where BS: 'c;
 }
@@ -361,7 +360,7 @@ macro_rules! define_message {
                             }
                         )*
                         skip_input(input, length).await;
-                        ()
+
                     };
                     #[cfg(feature = "logging")]
                     trace!("Future size for {}: {}", stringify!($name), core::mem::size_of_val(&rv));
@@ -763,7 +762,7 @@ impl LengthDelimitedParser<Any> for AnyOf<T> {
 /// ObserveBytes for LengthDelimitedParser.
 impl<
         X: 'static,
-        F: Fn(&mut X, &[u8]) -> () + Copy,
+        F: Fn(&mut X, &[u8]) + Copy,
         S: LengthDelimitedParser<A, HashIntercept<BS, X, F>>,
         A,
         BS: 'static + Readable + Clone,

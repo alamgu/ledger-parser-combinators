@@ -26,9 +26,7 @@ pub trait Summable<A> {
 
 impl<A> Summable<A> for () {
     fn add_and_set(&mut self, _other: &A) {}
-    fn zero() -> Self {
-        ()
-    }
+    fn zero() -> Self {}
 }
 
 impl<A: Summable<C>, B: Summable<D>, C, D> Summable<(C, D)> for (A, B) {
@@ -165,7 +163,7 @@ fn get_json_token<'a>(
                             }
                             _ => reject(cursor),
                         }
-                        .and_then(|a| Ok((a, tail)))
+                        .map(|a| (a, tail))
                     }
                     None => need_more(cursor),
                 };
@@ -227,7 +225,7 @@ fn get_json_token<'a>(
                                 reject(cursor)
                             }
                         }
-                        .and_then(|a| Ok((a, tail)))
+                        .map(|a| (a, tail))
                     }
                 };
             }
@@ -579,7 +577,7 @@ impl<const N: usize> JsonInterp<JsonAny> for JsonStringAccumulate<N> {
     ) -> Result<(), Option<OOB>> {
         match destination {
             None => set_from_thunk(destination, || Some(ArrayVec::new())),
-            _ => {}
+            Some(_) => {}
         }
         let mut extend_dest = |c: &[u8]| -> Result<(), Option<OOB>> {
             destination
@@ -843,9 +841,7 @@ fn test_json_any_drop() {
 impl ParserCommon<JsonBool> for DropInterp {
     type State = ();
     type Returning = ();
-    fn init(&self) -> Self::State {
-        ()
-    }
+    fn init(&self) -> Self::State {}
 }
 
 impl JsonInterp<JsonBool> for DropInterp {
@@ -869,9 +865,7 @@ impl JsonInterp<JsonBool> for DropInterp {
 impl ParserCommon<JsonNull> for DropInterp {
     type State = ();
     type Returning = ();
-    fn init(&self) -> Self::State {
-        ()
-    }
+    fn init(&self) -> Self::State {}
 }
 
 impl JsonInterp<JsonNull> for DropInterp {
@@ -1320,6 +1314,7 @@ impl<
                 (First, EndArray) => return Ok(()),
                 (First, _) => {
                     set_from_thunk(st.0, || Item(<S as ParserCommon<T>>::init(&self.0), None));
+                    #[allow(clippy::single_match)]
                     match st.0 {
                         Item(ref mut s, ref mut sub_destination) => {
                             <S as DynParser<T>>::init_param(
@@ -1345,6 +1340,7 @@ impl<
                 }
                 (AfterValue, ValueSeparator) => {
                     set_from_thunk(st.0, || Item(<S as ParserCommon<T>>::init(&self.0), None));
+                    #[allow(clippy::single_match)]
                     match st.0 {
                         Item(ref mut s, ref mut sub_destination) => {
                             <S as DynParser<T>>::init_param(
@@ -1491,7 +1487,7 @@ impl<const N: usize> JsonInterp<JsonString> for JsonStringAccumulate<N> {
                 match destination {
                     // This is intentional, it allows caller to append to an ArrayVec if necessary
                     None => set_from_thunk(destination, || Some(ArrayVec::new())),
-                    _ => {}
+                    Some(_) => {}
                 }
                 *state = JsonStringAccumulateState::Accumulating;
                 Err(None)
@@ -1591,7 +1587,7 @@ impl<A, I: JsonInterp<A>> JsonInterp<Alt<A, JsonAny>> for OrDropAny<I> {
         let mut rv2 = None;
         match destination {
             None => set_from_thunk(destination, || Some(None)),
-            _ => (),
+            Some(_) => (),
         }
         match (
             state1
@@ -1665,7 +1661,7 @@ where
         let mut rv2 = None;
         match destination {
             None => set_from_thunk(destination, || Some(None)),
-            _ => (),
+            Some(_) => (),
         }
         match (
             state1
