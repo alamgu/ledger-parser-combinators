@@ -158,7 +158,10 @@ where
         async move {
             let mut accumulator = ArrayVec::<<S as HasOutput<T>>::Output, N>::new();
             while !accumulator.is_full() {
-                accumulator.push(<S as AsyncParser<T, BS>>::parse(&self.0, input).await);
+                match accumulator.try_push(<S as AsyncParser<T, BS>>::parse(&self.0, input).await) {
+                    Ok(rv) => rv,
+                    _ => reject().await,
+                };
             }
             match accumulator.take().into_inner() {
                 Ok(rv) => rv,
@@ -270,7 +273,10 @@ where
             };
             let mut accumulator = ArrayVec::new();
             for _ in 0..length {
-                accumulator.push(self.0.parse(input).await);
+                match accumulator.try_push(self.0.parse(input).await) {
+                    Ok(rv) => rv,
+                    _ => reject().await,
+                };
             }
             accumulator
         }
