@@ -111,8 +111,8 @@ impl<const N: usize> HasOutput<String> for Buffer<N> {
     type Output = ArrayVec<u8, N>;
 }
 
-async fn read_arrayvec_n<'a, const N: usize, BS: Readable>(
-    input: &'a mut BS,
+async fn read_arrayvec_n<const N: usize, BS: Readable>(
+    input: &mut BS,
     mut length: usize,
 ) -> ArrayVec<u8, N> {
     if length > N {
