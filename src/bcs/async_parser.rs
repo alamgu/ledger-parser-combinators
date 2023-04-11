@@ -196,27 +196,42 @@ mod test {
     #[test]
     fn test_varint_2_pow_0() {
         let mut input = TestReadable([0x01], 0);
-        assert_eq!(poll_once(ULEB128.def_parse(&mut input)), Poll::Ready(2_u32.pow(0)));
+        assert_eq!(
+            poll_once(ULEB128.def_parse(&mut input)),
+            Poll::Ready(2_u32.pow(0))
+        );
     }
     #[test]
     fn test_varint_2_pow_7() {
         let mut input = TestReadable([0x80, 0x01], 0);
-        assert_eq!(poll_once(ULEB128.def_parse(&mut input)), Poll::Ready(2_u32.pow(7)));
+        assert_eq!(
+            poll_once(ULEB128.def_parse(&mut input)),
+            Poll::Ready(2_u32.pow(7))
+        );
     }
     #[test]
     fn test_varint_2_pow_14() {
         let mut input = TestReadable([0x80, 0x80, 0x01], 0);
-        assert_eq!(poll_once(ULEB128.def_parse(&mut input)), Poll::Ready(2_u32.pow(14)));
+        assert_eq!(
+            poll_once(ULEB128.def_parse(&mut input)),
+            Poll::Ready(2_u32.pow(14))
+        );
     }
     #[test]
     fn test_varint_2_pow_21() {
         let mut input = TestReadable([0x80, 0x80, 0x80, 0x01], 0);
-        assert_eq!(poll_once(ULEB128.def_parse(&mut input)), Poll::Ready(2_u32.pow(21)));
+        assert_eq!(
+            poll_once(ULEB128.def_parse(&mut input)),
+            Poll::Ready(2_u32.pow(21))
+        );
     }
     #[test]
     fn test_varint_2_pow_28() {
         let mut input = TestReadable([0x80, 0x80, 0x80, 0x80, 0x01], 0);
-        assert_eq!(poll_once(ULEB128.def_parse(&mut input)), Poll::Ready(2_u32.pow(28)));
+        assert_eq!(
+            poll_once(ULEB128.def_parse(&mut input)),
+            Poll::Ready(2_u32.pow(28))
+        );
     }
     #[test]
     fn test_varint_9487() {
@@ -227,18 +242,27 @@ mod test {
     #[test]
     fn test_pair_varint_9487() {
         let mut input = TestReadable([0x8f, 0x4a, 0x8f, 0x4a], 0);
-        assert_eq!(poll_once((ULEB128, ULEB128).def_parse(&mut input)), Poll::Ready((9487, 9487)));
+        assert_eq!(
+            poll_once((ULEB128, ULEB128).def_parse(&mut input)),
+            Poll::Ready((9487, 9487))
+        );
     }
 
     #[test]
     fn test_triple() {
         let mut input = TestReadable([0x8f, 0x4a, 0x8f, 0x4a, 0x80, 0x80, 0x80, 0x80, 0x01], 0);
-        assert_eq!(poll_once((ULEB128, ULEB128, ULEB128).def_parse(&mut input)), Poll::Ready((9487, 9487, 2_u32.pow(28))));
+        assert_eq!(
+            poll_once((ULEB128, ULEB128, ULEB128).def_parse(&mut input)),
+            Poll::Ready((9487, 9487, 2_u32.pow(28)))
+        );
     }
 
     #[test]
     fn test_nested() {
         let mut input = TestReadable([0x8f, 0x4a, 0x8f, 0x4a, 0x80, 0x80, 0x80, 0x80, 0x01], 0);
-        assert_eq!(poll_once((ULEB128, (ULEB128, ULEB128)).def_parse(&mut input)), Poll::Ready((9487, (9487, 2_u32.pow(28)))));
+        assert_eq!(
+            poll_once((ULEB128, (ULEB128, ULEB128)).def_parse(&mut input)),
+            Poll::Ready((9487, (9487, 2_u32.pow(28))))
+        );
     }
 }
