@@ -26,9 +26,7 @@ pub trait Summable<A> {
 
 impl<A> Summable<A> for () {
     fn add_and_set(&mut self, _other: &A) {}
-    fn zero() -> Self {
-        ()
-    }
+    fn zero() -> Self {}
 }
 
 impl<A: Summable<C>, B: Summable<D>, C, D> Summable<(C, D)> for (A, B) {
@@ -165,7 +163,7 @@ fn get_json_token<'a>(
                             }
                             _ => reject(cursor),
                         }
-                        .and_then(|a| Ok((a, tail)))
+                        .map(|a| (a, tail))
                     }
                     None => need_more(cursor),
                 };
@@ -227,7 +225,7 @@ fn get_json_token<'a>(
                                 reject(cursor)
                             }
                         }
-                        .and_then(|a| Ok((a, tail)))
+                        .map(|a| (a, tail))
                     }
                 };
             }
@@ -843,9 +841,7 @@ fn test_json_any_drop() {
 impl ParserCommon<JsonBool> for DropInterp {
     type State = ();
     type Returning = ();
-    fn init(&self) -> Self::State {
-        ()
-    }
+    fn init(&self) -> Self::State {}
 }
 
 impl JsonInterp<JsonBool> for DropInterp {
@@ -869,9 +865,7 @@ impl JsonInterp<JsonBool> for DropInterp {
 impl ParserCommon<JsonNull> for DropInterp {
     type State = ();
     type Returning = ();
-    fn init(&self) -> Self::State {
-        ()
-    }
+    fn init(&self) -> Self::State {}
 }
 
 impl JsonInterp<JsonNull> for DropInterp {

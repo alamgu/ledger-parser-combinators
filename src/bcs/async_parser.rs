@@ -3,8 +3,6 @@ use crate::core_parsers::*;
 use crate::interp::*;
 
 use core::future::Future;
-#[cfg(feature = "logging")]
-use ledger_log::*;
 
 impl HasOutput<bool> for DefaultInterp {
     type Output = bool;

@@ -122,9 +122,7 @@ impl InterpParser<Byte> for DefaultInterp {
 impl ParserCommon<Byte> for DropInterp {
     type State = ();
     type Returning = ();
-    fn init(&self) -> Self::State {
-        ()
-    }
+    fn init(&self) -> Self::State {}
 }
 
 impl InterpParser<Byte> for DropInterp {
@@ -842,7 +840,7 @@ impl<A, B, S: DynParser<A>, T: DynParser<B, Parameter = S::Returning>> DynParser
 #[derive(Clone)]
 pub struct ObserveBytes<X, F, S>(pub fn() -> X, pub F, pub S);
 
-impl<A, X: Clone, F: Fn(&mut X, &[u8]) -> (), S: ParserCommon<A>> ParserCommon<A>
+impl<A, X: Clone, F: Fn(&mut X, &[u8]), S: ParserCommon<A>> ParserCommon<A>
     for ObserveBytes<X, F, S>
 {
     type State = Option<<S as ParserCommon<A>>::State>;
@@ -855,7 +853,7 @@ impl<A, X: Clone, F: Fn(&mut X, &[u8]) -> (), S: ParserCommon<A>> ParserCommon<A
     }
 }
 
-impl<A, X: Clone, F: Fn(&mut X, &[u8]) -> (), S: InterpParser<A>> InterpParser<A>
+impl<A, X: Clone, F: Fn(&mut X, &[u8]), S: InterpParser<A>> InterpParser<A>
     for ObserveBytes<X, F, S>
 {
     #[inline(never)]
@@ -890,9 +888,7 @@ impl<A, X: Clone, F: Fn(&mut X, &[u8]) -> (), S: InterpParser<A>> InterpParser<A
     }
 }
 
-impl<A, X: Clone, F: Fn(&mut X, &[u8]) -> (), S: InterpParser<A>> DynParser<A>
-    for ObserveBytes<X, F, S>
-{
+impl<A, X: Clone, F: Fn(&mut X, &[u8]), S: InterpParser<A>> DynParser<A> for ObserveBytes<X, F, S> {
     type Parameter = X;
     #[inline(never)]
     fn init_param(
@@ -901,7 +897,7 @@ impl<A, X: Clone, F: Fn(&mut X, &[u8]) -> (), S: InterpParser<A>> DynParser<A>
         state: &mut Self::State,
         destination: &mut Option<Self::Returning>,
     ) {
-        *destination = Some((param.clone(), None));
+        *destination = Some((param, None));
         *state = Some(<S as ParserCommon<A>>::init(&self.2));
     }
 }
@@ -1041,7 +1037,7 @@ impl<I, S: InterpParser<I>> InterpParser<I> for LengthLimited<S> {
                 if consumed < feed_amount || state.bytes_seen < self.bytes_limit {
                     return Err((Some(OOB::Reject), new_cursor));
                 }
-                return Ok(&chunk[feed_amount..chunk.len()]);
+                Ok(&chunk[feed_amount..chunk.len()])
             }
             Err((None, new_cursor)) => {
                 let consumed = feed_amount - new_cursor.len();
@@ -1069,7 +1065,7 @@ impl<I, S: InterpParser<I>> InterpParser<I> for LengthLimited<S> {
 #[derive(Clone)]
 pub struct ObserveLengthedBytes<I: Fn() -> X, X, F, S>(pub I, pub F, pub S, pub bool);
 
-impl<IFun: Fn() -> X, N, I, S: ParserCommon<I>, X, F: Fn(&mut X, &[u8]) -> ()>
+impl<IFun: Fn() -> X, N, I, S: ParserCommon<I>, X, F: Fn(&mut X, &[u8])>
     ParserCommon<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S>
 where
     DefaultInterp: ParserCommon<N>,
@@ -1103,7 +1099,7 @@ where
     }
 }
 
-impl<IFun: Fn() -> X, N, I, S: InterpParser<I>, X, F: Fn(&mut X, &[u8]) -> ()>
+impl<IFun: Fn() -> X, N, I, S: InterpParser<I>, X, F: Fn(&mut X, &[u8])>
     InterpParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S>
 where
     DefaultInterp: InterpParser<N>,
@@ -1222,7 +1218,7 @@ where
     }
 }
 
-impl<IFun: Fn() -> X, N, I, S: InterpParser<I>, X, F: Fn(&mut X, &[u8]) -> ()>
+impl<IFun: Fn() -> X, N, I, S: InterpParser<I>, X, F: Fn(&mut X, &[u8])>
     DynParser<LengthFallback<N, I>> for ObserveLengthedBytes<IFun, X, F, S>
 where
     DefaultInterp: InterpParser<N>,
