@@ -4,6 +4,9 @@ pub enum Endianness {
     Little,
 }
 
+#[cfg(version("1.75"))]
+impl core::marker::ConstParamTy for Endianness {}
+
 pub trait FixedSized {
     // doesn't yet work
     //const Size: usize;

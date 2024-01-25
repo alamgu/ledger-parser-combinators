@@ -14,6 +14,9 @@ pub enum StringList {
     Nil,
 }
 
+#[cfg(version("1.75"))]
+impl core::marker::ConstParamTy for StringList {}
+
 pub struct JsonStringEnum<const MAX: usize, const STRS: &'static StringList>;
 
 pub use paste::paste;
