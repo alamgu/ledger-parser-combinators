@@ -1,6 +1,6 @@
 [package]
 name = "ledger-parser-combinators"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Jonathan D.K. Gibbons <jonored@gmail.com>"]
 edition = "2018"
 
@@ -33,7 +33,7 @@ optional = true
 nanos_sdk = { git = "https://github.com/LedgerHQ/ledger-nanos-sdk.git" }
 
 [target.'cfg(target_family = "bolos")'.dev-dependencies]
-testmacro = { git = "https://github.com/yhql/testmacro"}
+testmacro = "0.1.0"
 nanos_sdk = { git = "https://github.com/LedgerHQ/ledger-nanos-sdk.git", features = ["speculos"] }
 
 [patch."https://github.com/LedgerHQ/ledger-nanos-sdk.git".nanos_sdk]
