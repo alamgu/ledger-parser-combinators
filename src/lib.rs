@@ -23,7 +23,7 @@
 #![cfg_attr(all(target_family = "bolos", test), no_main)]
 #![cfg_attr(target_family = "bolos", feature(custom_test_frameworks))]
 #![reexport_test_harness_main = "test_main"]
-#![cfg_attr(target_family = "bolos", test_runner(nanos_sdk::sdk_test_runner))]
+#![cfg_attr(target_family = "bolos", test_runner(ledger_device_sdk::testing::sdk_test_runner))]
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 #[macro_use]
@@ -33,9 +33,9 @@ extern crate enum_init;
 extern crate num_derive;
 
 //#[cfg(all(not(target_os = "linux"), test))]
-//use nanos_sdk::exit_app;
+//use ledger_device_sdk::exit_app;
 #[cfg(all(not(target_os = "linux"), test))]
-use nanos_sdk::pic_rs;
+use ledger_secure_sdk_sys::pic_rs;
 
 #[allow(dead_code)]
 #[allow(non_upper_case_globals)]
@@ -53,7 +53,7 @@ extern "C" fn sample_main() {
         ro_offset = ptrdiff;
     }
     // let ptrdiff = ((foo as *const str) as usize) - ((modfoo as *const str) as usize);
-    use nanos_sdk::exit_app;
+    use ledger_device_sdk::exit_app;
     test_main();
     exit_app(0);
 }
@@ -63,7 +63,7 @@ use core::panic::PanicInfo;
 #[cfg(all(not(target_os = "linux"), test))]
 #[panic_handler]
 fn handle_panic(_: &PanicInfo) -> ! {
-    use nanos_sdk::exit_app;
+    use ledger_device_sdk::exit_app;
     exit_app(0);
 }
 

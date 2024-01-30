@@ -9,7 +9,7 @@ rustflags = [
   "-C", "embed-bitcode",
   "--emit=metadata,link,obj,llvm-ir,llvm-bc"
 ]
-runner = "speculos --display headless -m nanosp -k 1.0.3 "
+runner = "speculos --display headless -m nanosp -a 5 "
 
 [target.nanos]
 rustflags = [

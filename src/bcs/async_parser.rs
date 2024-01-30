@@ -98,7 +98,7 @@ mod test {
 
     #[cfg(target_family = "bolos")]
     #[allow(unused_imports)]
-    use nanos_sdk::TestType;
+    use ledger_device_sdk::testing::TestType;
     #[cfg(target_family = "bolos")]
     use testmacro::test_item as test;
 

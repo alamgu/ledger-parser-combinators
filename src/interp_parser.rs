@@ -1241,7 +1241,7 @@ mod test {
     use testmacro::test_item as test;
 #[cfg(all(target_family="bolos", test))]
 #[allow(unused_imports)]
-    use nanos_sdk::{TestType, debug_print}; // , Pic};
+    use ledger_device_sdk::{TestType, debug_print}; // , Pic};
 #[cfg(all(not(target_family="bolos"), test))]
     fn debug_print(_s: &str) {
     }

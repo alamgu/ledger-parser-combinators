@@ -12,7 +12,7 @@ pub use paste::paste;
 
 #[cfg(all(target_family = "bolos", test))]
 #[allow(unused_imports)]
-use nanos_sdk::TestType;
+use ledger_device_sdk::testing::TestType;
 #[cfg(all(target_family = "bolos", test))]
 use testmacro::test_item as test; // , Pic};
 

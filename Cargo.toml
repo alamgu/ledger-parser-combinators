@@ -30,12 +30,13 @@ optional = true
 "logging" = [ "ledger-log" ]
 
 [target.'cfg(target_family = "bolos")'.dependencies]
-nanos_sdk = { git = "https://github.com/LedgerHQ/ledger-nanos-sdk.git" }
+ledger_device_sdk = "1.4.3"
+ledger_secure_sdk_sys = "1.1.0"
 
 [target.'cfg(target_family = "bolos")'.dev-dependencies]
 testmacro = "0.1.0"
-nanos_sdk = { git = "https://github.com/LedgerHQ/ledger-nanos-sdk.git", features = ["speculos"] }
+ledger_device_sdk = { version = "1.4.3", features = ["speculos"] }
 
-[patch."https://github.com/LedgerHQ/ledger-nanos-sdk.git".nanos_sdk]
-git = "https://github.com/alamgu/ledger-nanos-sdk.git"
-branch = "memory-fixes"
+[patch.crates-io]
+ledger_device_sdk = { git = "https://github.com/alamgu/ledger-nanos-sdk.git", branch = "relocating-loader-new-sdk" }
+ledger_secure_sdk_sys = { git = "https://github.com/alamgu/ledger-nanos-sdk.git", branch = "relocating-loader-new-sdk" }
