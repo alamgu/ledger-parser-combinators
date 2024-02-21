@@ -30,13 +30,9 @@ optional = true
 "logging" = [ "ledger-log" ]
 
 [target.'cfg(target_family = "bolos")'.dependencies]
-ledger_device_sdk = "1.4.3"
+ledger_device_sdk = "1.5.1"
 ledger_secure_sdk_sys = "1.1.0"
 
 [target.'cfg(target_family = "bolos")'.dev-dependencies]
 testmacro = "0.1.0"
-ledger_device_sdk = { version = "1.4.3", features = ["speculos"] }
-
-[patch.crates-io]
-ledger_device_sdk = { git = "https://github.com/alamgu/ledger-nanos-sdk.git", branch = "relocating-loader-new-sdk" }
-ledger_secure_sdk_sys = { git = "https://github.com/alamgu/ledger-nanos-sdk.git", branch = "relocating-loader-new-sdk" }
+ledger_device_sdk = { version = "1.5.1", features = ["speculos"] }
