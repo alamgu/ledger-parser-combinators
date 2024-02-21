@@ -43,32 +43,35 @@ where
     type State<'c> = impl Future<Output = <DefaultInterp as HasOutput<Self>>::Output> + 'c where BS: 'c, T: 'c;
 }
 
-static mut REJECTED: bool = false;
+pub static mut REJECTED_CODE: u16 = 0;
+
+// This is an unused error code, see SyscallError in SDK
+pub const PARSE_ERROR_CODE: u16 = 0x6850;
 
 /// Reject the parse.
-pub fn reject<T>() -> impl Future<Output = T> {
+pub fn reject<T>(error_code: u16) -> impl Future<Output = T> {
     #[cfg(feature = "logging")]
     error!("Rejecting parse");
     // Do some out-of-band rejection thingie
     unsafe {
-        REJECTED = true;
+        REJECTED_CODE = error_code;
     }
     core::future::pending()
 }
 
 #[allow(unused_variables)]
-pub fn reject_on<T>(file: &'static str, line: u32) -> impl Future<Output = T> {
+pub fn reject_on<T>(file: &'static str, line: u32, error_code: u16) -> impl Future<Output = T> {
     #[cfg(feature = "logging")]
     error!("Rejecting, {}:{}", file, line);
     unsafe {
-        REJECTED = true;
+        REJECTED_CODE = error_code;
     }
     core::future::pending()
 }
 
 pub fn reset_rejected() {
     unsafe {
-        REJECTED = false;
+        REJECTED_CODE = 0;
     }
 }
 
@@ -79,10 +82,10 @@ impl<F: Future> Future for TryFuture<F> {
     fn poll(self: Pin<&mut Self>, ctxd: &mut Context<'_>) -> core::task::Poll<Self::Output> {
         use core::task::Poll;
         unsafe {
-            REJECTED = false;
+            REJECTED_CODE = 0;
         }
         match self.project().0.poll(ctxd) {
-            Poll::Pending if unsafe { REJECTED } => Poll::Ready(None),
+            Poll::Pending if unsafe { REJECTED_CODE != 0 } => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
             Poll::Ready(r) => Poll::Ready(Some(r)),
         }
@@ -160,12 +163,12 @@ where
             while !accumulator.is_full() {
                 match accumulator.try_push(<S as AsyncParser<T, BS>>::parse(&self.0, input).await) {
                     Ok(rv) => rv,
-                    _ => reject().await,
+                    _ => reject(PARSE_ERROR_CODE).await,
                 };
             }
             match accumulator.take().into_inner() {
                 Ok(rv) => rv,
-                _ => reject().await,
+                _ => reject(PARSE_ERROR_CODE).await,
             }
         }
     }
@@ -269,13 +272,13 @@ where
         async move {
             let length: usize = match DefaultInterp.parse(input).await.try_into() {
                 Ok(a) => a,
-                Err(_) => reject().await,
+                Err(_) => reject(PARSE_ERROR_CODE).await,
             };
             let mut accumulator = ArrayVec::new();
             for _ in 0..length {
                 match accumulator.try_push(self.0.parse(input).await) {
                     Ok(rv) => rv,
-                    _ => reject().await,
+                    _ => reject(PARSE_ERROR_CODE).await,
                 };
             }
             accumulator
@@ -303,7 +306,7 @@ where
                     .try_into()
                 {
                     Ok(a) => a,
-                    Err(_) => reject().await,
+                    Err(_) => reject(PARSE_ERROR_CODE).await,
                 };
             for _ in 0..length {
                 <DefaultInterp as AsyncParser<I, BS>>::parse(&DefaultInterp, input).await;
@@ -331,7 +334,7 @@ impl<
         async move {
             match self.1(self.0.parse(input).await) {
                 Some(a) => a,
-                None => reject().await,
+                None => reject(PARSE_ERROR_CODE).await,
             }
         }
     }
@@ -364,7 +367,7 @@ impl<
         async move {
             match self.1(self.0.parse(input).await).await {
                 Some(a) => a,
-                None => reject().await,
+                None => reject(PARSE_ERROR_CODE).await,
             }
         }
     }
@@ -384,9 +387,9 @@ impl<A, R, S: AsyncParser<A, BS>, BS: Readable> AsyncParser<A, BS>
             match self.1(&self.0.parse(input).await, &mut destination) {
                 Some(()) => match destination {
                     Some(a) => a,
-                    None => reject().await,
+                    None => reject(PARSE_ERROR_CODE).await,
                 },
-                None => reject().await,
+                None => reject(PARSE_ERROR_CODE).await,
             }
         }
     }
@@ -408,7 +411,7 @@ impl<T, S: AsyncParser<T, BS>, R, BS: Readable> AsyncParser<T, BS>
         async move {
             match self.1(self.0.parse(input).await) {
                 Some(a) => a,
-                None => reject().await,
+                None => reject(PARSE_ERROR_CODE).await,
             }
         }
     }
@@ -536,7 +539,7 @@ impl<
         async move {
             match self.1(self.0.parse(input, length).await) {
                 Some(a) => a,
-                None => reject_on(core::file!(), core::line!()).await,
+                None => reject_on(core::file!(), core::line!(), PARSE_ERROR_CODE).await,
             }
         }
     }
@@ -556,7 +559,7 @@ impl<
         async move {
             match self.1(self.0.parse(input, length).await).await {
                 Some(a) => a,
-                None => reject().await,
+                None => reject(PARSE_ERROR_CODE).await,
             }
         }
     }

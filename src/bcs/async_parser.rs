@@ -16,7 +16,7 @@ impl<BS: Readable> AsyncParser<bool, BS> for DefaultInterp {
             match byte {
                 0 => false,
                 1 => true,
-                _ => reject_on(core::file!(), core::line!()).await,
+                _ => reject_on(core::file!(), core::line!(), PARSE_ERROR_CODE).await,
             }
         }
     }
@@ -71,7 +71,7 @@ impl<BS: Readable> AsyncParser<ULEB128, BS> for DefaultInterp {
                     if shift > 0 && digit == 0 {
                         // We only accept canonical ULEB128 encodings, therefore the
                         // heaviest (and last) base-128 digit must be non-zero.
-                        reject_on(core::file!(), core::line!()).await
+                        reject_on(core::file!(), core::line!(), PARSE_ERROR_CODE).await
                     }
                     break;
                 }
@@ -80,7 +80,7 @@ impl<BS: Readable> AsyncParser<ULEB128, BS> for DefaultInterp {
             use core::convert::TryFrom;
             match u32::try_from(value) {
                 Ok(v) => v,
-                Err(_) => reject_on::<u32>(core::file!(), core::line!()).await,
+                Err(_) => reject_on::<u32>(core::file!(), core::line!(), PARSE_ERROR_CODE).await,
             }
         }
     }

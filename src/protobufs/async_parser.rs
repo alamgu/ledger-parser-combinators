@@ -26,7 +26,7 @@ where
             {
                 #[cfg(feature = "logging")]
                 trace!("Malformed varint");
-                reject_on(core::file!(), core::line!()).await
+                reject_on(core::file!(), core::line!(), PARSE_ERROR_CODE).await
             }
             accumulator += core::convert::Into::<T>::into(current & 0x7f)
                 << core::convert::From::from(7 * n as u8);
@@ -116,7 +116,7 @@ async fn read_arrayvec_n<const N: usize, BS: Readable>(
     mut length: usize,
 ) -> ArrayVec<u8, N> {
     if length > N {
-        reject_on(core::file!(), core::line!()).await
+        reject_on(core::file!(), core::line!(), PARSE_ERROR_CODE).await
     }
     let mut accumulator = ArrayVec::new();
     //for _ in 0..length {
@@ -178,8 +178,8 @@ pub async fn skip_field<BS: Readable>(fmt: ProtobufWire, i: &mut BS) {
                 i.read::<1>().await;
             }
         }
-        ProtobufWire::StartGroup => reject_on(core::file!(), core::line!()).await,
-        ProtobufWire::EndGroup => reject_on(core::file!(), core::line!()).await,
+        ProtobufWire::StartGroup => reject_on(core::file!(), core::line!(), PARSE_ERROR_CODE).await,
+        ProtobufWire::EndGroup => reject_on(core::file!(), core::line!(), PARSE_ERROR_CODE).await,
         ProtobufWire::Fixed32Bit => {
             i.read::<4>().await;
         }
@@ -296,7 +296,7 @@ macro_rules! define_message {
                             let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => {
                                 #[cfg(feature = "logging")]
                                 error!("Wrong wire type {:X}", tag);
-                                reject_on(core::file!(),core::line!()).await}
+                                reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await}
                             };
                             #[cfg(feature = "logging")]
                             info!("FieldP type: {:?}", wire);
@@ -307,7 +307,7 @@ macro_rules! define_message {
                             if ii.index()-start_index > length {
                                 #[cfg(feature = "logging")]
                                 error!("Length too long");
-                                return reject_on(core::file!(),core::line!()).await;
+                                return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                             }
                         }
                         #[cfg(feature = "logging")]
@@ -321,14 +321,14 @@ macro_rules! define_message {
                             trace!("Seek and Parse for field {}", stringify!($field));
                             loop {
                                 let tag : u32 = parse_varint(&mut ii).await;
-                                let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject_on(core::file!(),core::line!()).await, };
+                                let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await, };
                                 #[cfg(feature = "logging")]
                                 trace!("Next field, tag: {} wire: {:?}", tag >> 3, wire);
                                 if tag >> 3 == $number {
                                     if wire != $schemaType::FORMAT {
                                         #[cfg(feature = "logging")]
                                         error!("Format wrong for schema");
-                                        return reject_on(core::file!(),core::line!()).await;
+                                        return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                                     }
                                     #[cfg(feature = "logging")]
                                     trace!("Calling subparser {}", stringify!($field));
@@ -341,7 +341,7 @@ macro_rules! define_message {
                                         // our flow doesn't permit this.
                                         #[cfg(feature = "logging")]
                                         trace!("Non-repeated field repeated");
-                                        return reject_on(core::file!(),core::line!()).await;
+                                        return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                                     }
                                     seen = true;
                                 } else {
@@ -354,7 +354,7 @@ macro_rules! define_message {
                                 if ii.index()-start_index > length {
                                     #[cfg(feature = "logging")]
                                     error!("Length too long");
-                                    return reject_on(core::file!(),core::line!()).await;
+                                    return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                                 }
                             }
                             }
@@ -391,7 +391,7 @@ macro_rules! define_message {
                             // let mut seen = false;
                             loop {
                                 let tag : u32 = parse_varint(input).await;
-                                let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject_on(core::file!(),core::line!()).await, };
+                                let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await, };
                                 #[cfg(feature = "logging")]
                                 trace!("Next field, tag: {} wire: {:?}", tag >> 3, wire);
                                 match tag >> 3 {
@@ -399,7 +399,7 @@ macro_rules! define_message {
                                     if wire != $schemaType::FORMAT {
                                         #[cfg(feature = "logging")]
                                         error!("Format wrong for schema");
-                                        return reject_on(core::file!(),core::line!()).await;
+                                        return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                                     }
                                     #[cfg(feature = "logging")]
                                     trace!("Calling subparser {}", stringify!($field));
@@ -410,12 +410,12 @@ macro_rules! define_message {
                                         // Rejecting because of multiple fields on non-repeating;
                                         // protobuf spec says we should "take the last value" but
                                         // our flow doesn't permit this.
-                                        return reject_on(core::file!(),core::line!()).await;
+                                        return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                                     }
                                     seen = true;*/
                                     }
                                     )*
-                                        _ => return reject_on(core::file!(), core::line!()).await,
+                                        _ => return reject_on(core::file!(), core::line!(), PARSE_ERROR_CODE).await,
                                 }
                                 if input.index()-start == length {
                                     break;
@@ -423,7 +423,7 @@ macro_rules! define_message {
                                 if input.index()-start > length {
                                     #[cfg(feature = "logging")]
                                     error!("Length too long");
-                                    return reject_on(core::file!(),core::line!()).await;
+                                    return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                                 }
                             }
                             }
@@ -477,7 +477,7 @@ macro_rules! define_enum {
                 fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
                     async move {
                         match $name::from_u32(parse_varint(input).await) {
-                            None => reject_on(core::file!(),core::line!()).await,
+                            None => reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await,
                             Some(a) => a,
                         }
                     }
@@ -511,12 +511,12 @@ where
             for _ in 0..length {
                 let [c] = input.read().await;
                 cursor = match cursor.step(c) {
-                    None => reject_on(core::file!(), core::line!()).await,
+                    None => reject_on(core::file!(), core::line!(), PARSE_ERROR_CODE).await,
                     Some(cur) => cur,
                 }
             }
             match cursor.get_val() {
-                None => reject_on(core::file!(), core::line!()).await,
+                None => reject_on(core::file!(), core::line!(), PARSE_ERROR_CODE).await,
                 Some(r) => *r,
             }
         }
@@ -543,7 +543,7 @@ impl<Schema, O, BS: Readable> LengthDelimitedParser<Schema, BS> for RejectInterp
     type State<'c> = impl Future<Output = Self::Output> + 'c where BS: 'c, O: 'c;
 
     fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, _input: &'a mut BS, _length: usize) -> Self::State<'c> {
-        reject()
+        reject(PARSE_ERROR_CODE)
     }
 }
 
@@ -604,17 +604,17 @@ macro_rules! any_of {
                             let wire = match $crate::protobufs::schema::ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => {
                                 #[cfg(feature = "logging")]
                                 trace!("Invalid Protobuf Wire Format");
-                                reject_on(core::file!(),core::line!()).await} };
+                                reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await} };
                             if tag >> 3 == 1 {
                                 if wire != $crate::protobufs::schema::ProtobufWire::LengthDelimited {
                                     #[cfg(feature = "logging")]
                                     trace!("Wire is not length-delimited on url");
-                                    return reject_on(core::file!(),core::line!()).await;
+                                    return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                                 }
                                 if(discriminator.is_some()) {
                                     #[cfg(feature = "logging")]
                                     trace!("No support for multiple URLs in any messages");
-                                    return reject_on(core::file!(),core::line!()).await;
+                                    return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                                 }
                                 let length : usize = parse_varint(&mut ii).await;
                                 let mut discrim_parse = [<$name Discriminator>]::start();
@@ -624,7 +624,7 @@ macro_rules! any_of {
                                         Some(r) => {
                                             discrim_parse = r;
                                         }
-                                        None => { reject().await }
+                                        None => { reject(PARSE_ERROR_CODE).await }
                                     }
                                 }
                                 discriminator = discrim_parse.get_val();
@@ -640,7 +640,7 @@ macro_rules! any_of {
                             if ii.index()-start >= length {
                                 #[cfg(feature = "logging")]
                                 trace!("Bad length");
-                                return reject_on(core::file!(),core::line!()).await;
+                                return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                             }
                         }
                     }
@@ -653,17 +653,17 @@ macro_rules! any_of {
                                 trace!("Parsing value for discriminator {:?}", discriminator);
                                 loop {
                                     let tag : u32 = parse_varint(input).await;
-                                    let wire = match $crate::protobufs::schema::ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject_on(core::file!(),core::line!()).await, };
+                                    let wire = match $crate::protobufs::schema::ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await, };
                                     if tag >> 3 == 2 {
                                         if wire != [<$schema:camel>]::FORMAT {
-                                            return reject_on(core::file!(),core::line!()).await;
+                                            return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                                         }
                                         let length : usize = parse_varint(input).await;
                                         if(rv.is_some()) {
                                             // Rejecting because of multiple fields on non-repeating;
                                             // protobuf spec says we should "take the last value" but
                                             // our flow doesn't permit this.
-                                            return reject_on(core::file!(),core::line!()).await;
+                                            return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                                         }
                                         #[cfg(feature = "logging")]
                                         trace!("Parsing actual value");
@@ -680,7 +680,7 @@ macro_rules! any_of {
                                     if input.index()-start >= length {
                                         #[cfg(feature = "logging")]
                                         trace!("Bad length");
-                                        return reject_on(core::file!(),core::line!()).await;
+                                        return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                                     }
                                 }
                             }
@@ -693,7 +693,7 @@ macro_rules! any_of {
                             trace!("Good value"); r },
                         None => {
                             #[cfg(feature = "logging")]
-                            trace!("No value in Any"); reject().await }
+                            trace!("No value in Any"); reject(PARSE_ERROR_CODE).await }
                     }
                 }
             }
@@ -724,11 +724,11 @@ impl LengthDelimitedParser<Any> for AnyOf<T> {
             let mut seen = false;
             loop {
                 let tag : u32 = parse_varint(&mut tl).await;
-                let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject_on(core::file!(),core::line!()).await, };
+                let wire = match ProtobufWire::from_u32(tag & 0x07) { Some(w) => w, None => reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await, };
                 if tag >> 3 == 1 {
                     if wire != ProtobufWire::LengthDelimited {
                         println!("Incorrect format: reject");
-                        return reject_on(core::file!(),core::line!()).await;
+                        return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                     }
                     let length : usize = parse_varint(&mut tl).await;
 
@@ -737,7 +737,7 @@ impl LengthDelimitedParser<Any> for AnyOf<T> {
                         // Rejecting because of multiple fields on non-repeating;
                         // protobuf spec says we should "take the last value" but
                         // our flow doesn't permit this.
-                        return reject_on(core::file!(),core::line!()).await;
+                        return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                     }
                     seen = true;
                 } else {
@@ -750,7 +750,7 @@ impl LengthDelimitedParser<Any> for AnyOf<T> {
                 }
                 if tl.1 >= length {
                     println!("Message off end; rejecting.");
-                    return reject_on(core::file!(),core::line!()).await;
+                    return reject_on(core::file!(),core::line!(), PARSE_ERROR_CODE).await;
                 }
             }
         }
