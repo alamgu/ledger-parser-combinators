@@ -1,6 +1,6 @@
 [package]
 name = "ledger-parser-combinators"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Jonathan D.K. Gibbons <jonored@gmail.com>"]
 edition = "2018"
 
