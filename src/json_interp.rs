@@ -1161,6 +1161,31 @@ where
     }
 }
 
+// DropInterp with DynParser support
+pub struct DynDropInterp<P>(core::marker::PhantomData<P>);
+
+impl<P> DynDropInterp<P> {
+    pub const fn new() -> Self { DynDropInterp(core::marker::PhantomData) }
+}
+
+impl<T, P> ParserCommon<T> for DynDropInterp<P> where DropInterp: ParserCommon<T> {
+    type State = <DropInterp as ParserCommon<T>>::State;
+    type Returning = <DropInterp as ParserCommon<T>>::Returning;
+    fn init(&self) -> Self::State { <DropInterp as ParserCommon<T>>::init(&DropInterp) }
+}
+
+impl<T, P> DynParser<T> for DynDropInterp<P> where DropInterp: ParserCommon<T> {
+    type Parameter = P;
+    fn init_param(&self, _param: Self::Parameter, _state: &mut Self::State, _destination: &mut Option<Self::Returning>) { } // No-Op
+}
+
+impl<T, P> JsonInterp<T> for DynDropInterp<P> where DropInterp: JsonInterp<T> {
+    #[inline(never)]
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        <DropInterp as JsonInterp<T>>::parse(&DropInterp, state, token, destination)
+    }
+}
+
 /* Important: DROPS it's results */
 impl<T, S: ParserCommon<T>> ParserCommon<JsonArray<T>> for SubInterp<S> {
     type State =
@@ -1823,6 +1848,9 @@ macro_rules! define_json_struct_interp {
             pub struct [<$name Interp>]<$([<Field $field:camel>]: ParserCommon<$schemaType>),*> {
                 $(pub [<field_ $field:snake>] : [<Field $field:camel>] ),*
             }
+            pub struct [<$name DynInterp>]<$([<Field $field:camel>]: ParserCommon<$schemaType>),*> {
+                $(pub [<field_ $field:snake>] : [<Field $field:camel>] ),*
+            }
 
             #[derive(Debug)]
             pub enum [<$name State>]<$([<Field $field:camel>]),*> {
@@ -1876,6 +1904,82 @@ macro_rules! define_json_struct_interp {
                                 ,
                                 _ => {
                                     #[cfg(feature = "logging")]
+                                    error!("json-struct-interp parser: Got unexpected key {:?}\n", core::str::from_utf8(key));
+                                    return Err(Some($crate::interp_parser::OOB::Reject)) }
+                            }
+                        }
+                        $(
+                        [<$name State>]::[<Field $field:camel>](ref mut sub) => {
+                                let rv_temp=<[<Field $field:camel Interp>] as JsonInterp<$schemaType>>::parse(&self.[<field_ $field:snake>], sub, token, &mut destination.as_mut().ok_or(Some($crate::interp_parser::OOB::Reject))?.[<field_ $field:snake>]);//);
+                                rv_temp?;
+                            $crate::interp_parser::set_from_thunk(state, || [<$name State>]::ValueSep);
+                        })*
+
+                        [<$name State>]::ValueSep if token == JsonToken::ValueSeparator => {
+                            $crate::interp_parser::set_from_thunk(state, || [<$name State>]::Key(<JsonStringAccumulate<$n> as ParserCommon<JsonString>>::init(&JsonStringAccumulate), None));
+                        }
+                        [<$name State>]::ValueSep if token == JsonToken::EndObject => {
+                            $crate::interp_parser::set_from_thunk(state, || [<$name State>]::End);
+                            return Ok(());
+                        }
+                        _ => return Err(Some($crate::interp_parser::OOB::Reject)),
+                    };
+                    match state {
+                        [<$name State>]::End => Ok(()),
+                        _ => Err(None)
+                    }
+                }
+            }
+
+            impl<P, $([<Field $field:camel Interp>]: ParserCommon<$schemaType> + DynParser<$schemaType, Parameter = P>),*> ParserCommon<[<$name:camel Schema>]> for [<$name:camel DynInterp>]<$([<Field $field:camel Interp>]),*> {
+                type State = (<[<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> as ParserCommon<[<$name:camel Schema>]>>::State, Option<P>);
+                type Returning = <[<$name:camel Interp>]<$([<Field $field:camel Interp>]),*> as ParserCommon<[<$name:camel Schema>]>>::Returning;
+                fn init(&self) -> Self::State { ([<$name State>]::Start, None) }
+            }
+
+            impl<P, $([<Field $field:camel Interp>]: ParserCommon<$schemaType> + DynParser<$schemaType, Parameter = P>),*> DynParser<[<$name:camel Schema>]> for [<$name:camel DynInterp>]<$([<Field $field:camel Interp>]),*> {
+                type Parameter = P;
+                #[inline(never)]
+                fn init_param(&self, param: Self::Parameter, state: &mut Self::State, _destination: &mut Option<Self::Returning>) {
+                    set_from_thunk(&mut state.1, || Some(param));
+                }
+            }
+
+            impl<P: Clone, $([<Field $field:camel Interp>] : JsonInterp<$schemaType> + DynParser<$schemaType, Parameter = P>),*> JsonInterp<[<$name:camel Schema>]> for [<$name:camel DynInterp>]<$([<Field $field:camel Interp>]),*> {
+    #[inline(never)]
+                fn parse<'a>(&self, (ref mut state, p): &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<$crate::interp_parser::OOB>> {
+                    match state {
+                        // Object handling
+                        [<$name State>]::Start if token == JsonToken::BeginObject => {
+                            $crate::interp_parser::set_from_thunk(destination, || Some($name {$( [<field_ $field:snake>] : None ),* } ));
+                            $crate::interp_parser::set_from_thunk(state, || [<$name State>]::Key(<JsonStringAccumulate<$n> as ParserCommon<JsonString>>::init(&JsonStringAccumulate), None));
+                        }
+                        [<$name State>]::Key(ref mut key_state, ref mut key_destination) => {
+                            <JsonStringAccumulate<$n> as JsonInterp<JsonString>>::parse(&JsonStringAccumulate, key_state, token, key_destination)?;
+                            // Note: if we can figure out how, making key_val into a local that
+                            // reserves stack at less than the function scope will make this parse
+                            // cheaper.
+                            let key_val = core::mem::take(key_destination).ok_or(Some($crate::interp_parser::OOB::Reject))?;
+                            $crate::interp_parser::set_from_thunk(state, || [<$name State>]::KeySep(key_val));
+                        }
+
+                        [<$name State>]::KeySep(ref key) if token == JsonToken::NameSeparator => {
+                            match &key[..] {
+                                $(
+                                    $crate::json_interp::bstringify!($field) => {
+                                        trace!("json-struct-interp parser: checking key {:?}\n", core::str::from_utf8(key));
+                                        let mut sub = <[<Field $field:camel Interp>] as ParserCommon<$schemaType>>::init(&self.[<field_ $field:snake>]);
+                                        match p {
+                                            Some(p) => {
+                                                (<[<Field $field:camel Interp>] as DynParser<$schemaType>>::init_param(&self.[<field_ $field:snake>], p.clone(), &mut sub, &mut destination.as_mut().ok_or(Some($crate::interp_parser::OOB::Reject))?.[<field_ $field:snake>]));
+                                            }
+                                            _ => {}
+                                        }
+                                        $crate::interp_parser::set_from_thunk(state, || [<$name State>]::[<Field $field:camel>](sub));
+                                    }
+                                )*
+                                ,
+                                _ => {
                                     error!("json-struct-interp parser: Got unexpected key {:?}\n", core::str::from_utf8(key));
                                     return Err(Some($crate::interp_parser::OOB::Reject)) }
                             }
@@ -2026,6 +2130,17 @@ impl<A, R, S: JsonInterp<A>> JsonInterp<A>
         ) {
             None => Err(Some(OOB::Reject)),
             Some(()) => Ok(()),
+        }
+    }
+}
+
+impl<A, R, S : JsonInterp<A>, P> JsonInterp<A> for MoveAction<S, fn(<S as ParserCommon<A>>::Returning, &mut Option<R>, P) -> Option<()>> {
+    #[inline(never)]
+    fn parse<'a>(&self, state: &mut Self::State, token: JsonToken<'a>, destination: &mut Option<Self::Returning>) -> Result<(), Option<OOB>> {
+        self.0.parse(&mut state.0, token, &mut state.1)?;
+        match (self.1)(core::mem::take(&mut state.1).ok_or(Some(OOB::Reject))?, destination, core::mem::take(&mut state.2).ok_or(Some(OOB::Reject))?) {
+            None => { Err(Some(OOB::Reject)) }
+            Some(()) => { Ok(()) }
         }
     }
 }

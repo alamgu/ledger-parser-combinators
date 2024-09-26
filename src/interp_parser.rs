@@ -559,6 +559,50 @@ impl<A, R, S: ParserCommon<A>, C> DynParser<A>
     }
 }
 
+/* This impl exists to allow the _function_ of a MoveAction to be the target of the parameter for
+ * DynParser, thus giving an escape hatch to thread a parameter past a non-parameterized
+ * parser. */
+impl<A, R, S : ParserCommon<A>, P> ParserCommon<A> for MoveAction<S, fn(<S as ParserCommon<A>>::Returning, &mut Option<R>, P) -> Option<()>>
+{
+    type State = (<S as ParserCommon<A> >::State, Option<<S as ParserCommon<A> >::Returning>, Option<P>);
+    type Returning = R;
+
+    #[inline(never)]
+    fn init(&self) -> Self::State {
+        (<S as ParserCommon<A>>::init(&self.0), None, None)
+    }
+
+    #[inline(never)]
+    fn init_in_place(&self, state: *mut core::mem::MaybeUninit<Self::State>) {
+       self.0.init_in_place(unsafe { core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).0) as *mut core::mem::MaybeUninit<<S as ParserCommon<A> >::State> });
+       call_fn( || unsafe { (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).1) as *mut Option<<S as ParserCommon<A> >::Returning> ).write(None)} );
+       call_fn( || unsafe { (core::ptr::addr_of_mut!((*(*state).as_mut_ptr()).2) as *mut Option<P> ).write(None)} );
+    }
+}
+
+impl<A, R, S : InterpParser<A>, P> InterpParser<A> for MoveAction<S, fn(<S as ParserCommon<A>>::Returning, &mut Option<R>, P) -> Option<()>>
+{
+    #[inline(never)]
+    fn parse<'a, 'b>(&self, state: &'b mut Self::State, chunk: &'a [u8], destination: &mut Option<Self::Returning>) -> ParseResult<'a> {
+        let new_chunk = self.0.parse(&mut state.0, chunk, &mut state.1)?;
+        match (self.1)(core::mem::take(&mut state.1).ok_or((Some(OOB::Reject),new_chunk))?, destination, core::mem::take(&mut state.2).ok_or((Some(OOB::Reject),new_chunk))?) {
+            None => { Err((Some(OOB::Reject),new_chunk)) }
+            Some(()) => { Ok(new_chunk) }
+        }
+    }
+}
+
+impl<A, R, S : ParserCommon<A>, P> DynParser<A> for MoveAction<S, fn(<S as ParserCommon<A>>::Returning, &mut Option<R>, P) -> Option<()>>
+    {
+        type Parameter = P;
+        #[inline(never)]
+        fn init_param(&self, param: Self::Parameter, state: &mut Self::State, _destination: &mut Option<Self::Returning>) {
+            set_from_thunk(&mut state.0, || <S as ParserCommon<A>>::init(&self.0));
+            set_from_thunk(&mut state.1, || None);
+            set_from_thunk(&mut state.2, || Some(param));
+        }
+    }
+
 /* A MoveAction is the same as an Action with the distinction that it takes it's argument via Move,
  * thus enabling it to work with types that do not have Copy or Clone and have nontrivial semantics
  * involving Drop. */
