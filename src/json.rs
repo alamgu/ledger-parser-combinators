@@ -8,16 +8,16 @@ pub struct JsonNumber;
 pub struct JsonArray<T>(pub T);
 
 // Avoids a panic in the compiler if we have &'static [u8] directly in a slice in a constant.
-#[derive(PartialEq, Eq)]
-pub enum StringList {
-    Cons(&'static [u8], &'static StringList),
-    Nil,
-}
+// #[derive(PartialEq, Eq)]
+// pub enum StringList {
+//     Cons(&'static [u8], &'static StringList),
+//     Nil,
+// }
 
-#[cfg(version("1.75"))]
-impl core::marker::ConstParamTy for StringList {}
+// #[cfg(version("1.75"))]
+// impl core::marker::ConstParamTy for StringList {}
 
-pub struct JsonStringEnum<const MAX: usize, const STRS: &'static StringList>;
+// pub struct JsonStringEnum<const MAX: usize, const STRS: &'static StringList>;
 
 pub use paste::paste;
 #[macro_export]

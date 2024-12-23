@@ -1,11 +1,10 @@
 #[derive(PartialEq, Eq)]
+#[cfg(version("1.75"))]
+#[derive(core::marker::ConstParamTy)]
 pub enum Endianness {
     Big,
     Little,
 }
-
-#[cfg(version("1.75"))]
-impl core::marker::ConstParamTy for Endianness {}
 
 pub trait FixedSized {
     // doesn't yet work
