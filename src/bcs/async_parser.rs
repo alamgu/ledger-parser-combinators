@@ -22,6 +22,26 @@ impl<BS: Readable> AsyncParser<bool, BS> for DefaultInterp {
     }
 }
 
+impl<T, S: HasOutput<T>> HasOutput<Option<T>> for SubInterp<S> {
+    type Output = Option<S::Output>;
+}
+
+impl<T, S: HasOutput<T> + AsyncParser<T, BS>, BS: Readable> AsyncParser<Option<T>, BS>
+    for SubInterp<S>
+{
+    type State<'c> = impl Future<Output = Self::Output> + 'c where BS: 'c, S: 'c;
+    fn parse<'a: 'c, 'b: 'c, 'c>(&'b self, input: &'a mut BS) -> Self::State<'c> {
+        async move {
+            let [byte]: [u8; 1] = input.read().await;
+            match byte {
+                0 => None,
+                1 => Some(self.0.parse(input).await),
+                _ => reject_on(core::file!(), core::line!(), PARSE_ERROR_CODE).await,
+            }
+        }
+    }
+}
+
 /*
 #### ULEB128-Encoded Integers
 
