@@ -24,6 +24,7 @@ pin-project = "1.0.12"
 
 [dependencies.ledger-log]
 git = "https://github.com/alamgu/ledger-log"
+branch = "y333/rust_sdk_single_crate"
 optional = true
 
 [features]
@@ -38,8 +39,4 @@ ledger_device_sdk = { version = "1.28.0", features = ["speculos"] }
 
 [patch.crates-io]
 ledger_device_sdk = { git = "https://github.com/LedgerHQ/ledger-device-rust-sdk.git" }
-
-[patch."https://github.com/alamgu/ledger-log"]
-ledger-log = { path = "../../alamgu/ledger-log" }
-
 
