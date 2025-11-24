@@ -31,12 +31,9 @@ optional = true
 "logging" = [ "ledger-log" ]
 
 [target.'cfg(target_family = "bolos")'.dependencies]
-ledger_device_sdk = { version = "1.28.0" }
+ledger_device_sdk = { version = "1.29.0" }
 
 [target.'cfg(target_family = "bolos")'.dev-dependencies]
 testmacro = "0.1.0"
-ledger_device_sdk = { version = "1.28.0", features = ["speculos"] }
-
-[patch.crates-io]
-ledger_device_sdk = { git = "https://github.com/LedgerHQ/ledger-device-rust-sdk.git" }
+ledger_device_sdk = { version = "1.29.0", features = ["speculos"] }
 
