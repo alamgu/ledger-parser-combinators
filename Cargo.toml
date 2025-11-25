@@ -24,7 +24,6 @@ pin-project = "1.0.12"
 
 [dependencies.ledger-log]
 git = "https://github.com/alamgu/ledger-log"
-branch = "y333/rust_sdk_single_crate"
 optional = true
 
 [features]
